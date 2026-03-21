@@ -1,19 +1,6 @@
 <div align="center">
 
-<table>
-  <tr>
-    <td align="center" valign="middle" width="50%">
-      <img src="images/apex%20logo.png" alt="Apex Keys — logo completa" width="280">
-    </td>
-    <td align="center" valign="middle" width="50%">
-      <img src="images/logo%20no%20wolf.png" alt="Apex Keys — logo sem mascote" width="280">
-    </td>
-  </tr>
-</table>
-
-<br>
-
-<img src="images/logo%20no%20background.png" alt="Apex Keys API" width="420">
+<img src="images/logo%20no%20background.png" alt="Apex Keys API" width="640">
 
 **Backend de alta performance para sorteios de chaves Steam com carteira pré-paga, Pix e trilha de auditoria financeira.**
 
@@ -291,10 +278,7 @@ apex-keys-api/
 │       ├── wallet.py
 │       ├── checkout.py
 │       └── webhooks.py
-├── images/               # Identidade visual (logos)
-│   ├── apex logo.png
-│   ├── logo no wolf.png
-│   └── logo no background.png
+├── images/               # Logotipo de título do README (`logo no background.png`) e ativos de marca
 ├── schema.sql            # DDL PostgreSQL
 ├── requirements.txt
 ├── .env.example
