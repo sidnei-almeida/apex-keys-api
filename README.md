@@ -1,8 +1,19 @@
 <div align="center">
 
-<img src="images/apex%20logo.png" alt="Apex Keys — logotipo completo com mascote" width="480">
+<table>
+  <tr>
+    <td align="center" valign="middle" width="50%">
+      <img src="images/apex%20logo.png" alt="Apex Keys — logo completa" width="280">
+    </td>
+    <td align="center" valign="middle" width="50%">
+      <img src="images/logo%20no%20wolf.png" alt="Apex Keys — logo sem mascote" width="280">
+    </td>
+  </tr>
+</table>
 
-# Apex Keys API
+<br>
+
+<img src="images/logo%20no%20background.png" alt="Apex Keys API" width="420">
 
 **Backend de alta performance para sorteios de chaves Steam com carteira pré-paga, Pix e trilha de auditoria financeira.**
 
@@ -15,43 +26,10 @@
 
 ---
 
-## Identidade visual
-
-Ativos oficiais da marca em [`images/`](images/). Uso sugerido: **hero e documentação** (completa), **favicon / ícones compactos** (sem mascote), **fundos escuros ou sobreposições** (versão sem fundo).
-
-<table>
-  <thead>
-    <tr>
-      <th align="center">Logo completa</th>
-      <th align="center">Sem mascote</th>
-      <th align="center">Marca sem fundo</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td align="center" valign="top">
-        <img src="images/apex%20logo.png" alt="Apex Keys — logo completa" width="220"><br>
-        <sub><code>images/apex logo.png</code></sub>
-      </td>
-      <td align="center" valign="top">
-        <img src="images/logo%20no%20wolf.png" alt="Apex Keys — símbolo e wordmark sem mascote" width="220"><br>
-        <sub><code>images/logo no wolf.png</code></sub>
-      </td>
-      <td align="center" valign="top">
-        <img src="images/logo%20no%20background.png" alt="Apex Keys — nome da empresa sem background" width="220"><br>
-        <sub><code>images/logo no background.png</code></sub>
-      </td>
-    </tr>
-  </tbody>
-</table>
-
----
-
 ## Sumário
 
 | | |
 |:---|:---|
-| [Identidade visual](#identidade-visual) | Logos e ficheiros em `images/` |
 | [Visão geral](#visão-geral) | Propósito, escopo e princípios de desenho |
 | [Arquitetura](#arquitetura) | Camadas, dados e fluxos críticos |
 | [Stack](#stack-tecnológica) | Dependências e versões alvo |
