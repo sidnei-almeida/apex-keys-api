@@ -24,9 +24,20 @@ class Settings(BaseSettings):
     cors_origins: str = ""
 
     def cors_origin_list(self) -> list[str]:
+        """
+        Browsers enviam Origin sem barra final (ex.: https://app.vercel.app).
+        Aceita também entradas com / no fim na env para não falhar o preflight OPTIONS.
+        """
         if not self.cors_origins.strip():
             return []
-        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        seen: set[str] = set()
+        out: list[str] = []
+        for raw in self.cors_origins.split(","):
+            o = raw.strip().rstrip("/")
+            if o and o not in seen:
+                seen.add(o)
+                out.append(o)
+        return out
 
 
 @lru_cache

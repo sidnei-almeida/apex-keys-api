@@ -51,6 +51,7 @@ async def scrape_igdb_game(
         summary=data.get("summary"),
         image_url=data.get("image_url"),
         youtube_url=data.get("youtube_url"),
+        youtube_thumbnail_url=data.get("youtube_thumbnail_url"),
         igdb_url=str(data.get("igdb_url") or ""),
         igdb_game_id=data.get("igdb_game_id"),
         genres=list(data.get("genres") or []),

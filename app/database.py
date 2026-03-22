@@ -17,6 +17,38 @@ _engine: AsyncEngine | None = None
 async_session_maker: async_sessionmaker[AsyncSession] | None = None
 
 
+def _running_on_railway() -> bool:
+    return bool(
+        os.getenv("RAILWAY_ENVIRONMENT")
+        or os.getenv("RAILWAY_PROJECT_ID")
+        or os.getenv("RAILWAY_SERVICE_ID"),
+    )
+
+
+def _first_nonempty_env(*keys: str) -> str | None:
+    for key in keys:
+        v = os.getenv(key)
+        if v and v.strip():
+            return v.strip()
+    return None
+
+
+def _env_database_dsn() -> str | None:
+    """Railway: preferir URL privada entre serviços; localmente costuma ser só DATABASE_URL."""
+    if _running_on_railway():
+        return _first_nonempty_env("DATABASE_PRIVATE_URL", "DATABASE_URL", "POSTGRES_URL")
+    return _first_nonempty_env("DATABASE_URL", "DATABASE_PRIVATE_URL", "POSTGRES_URL")
+
+
+def _parsed_pg_target(dsn: str) -> tuple[str, int, str | None]:
+    """(hostname, port, username) para logs — sem password."""
+    u = dsn.replace("postgresql+asyncpg://", "postgresql://", 1)
+    parsed = urlparse(u)
+    host = parsed.hostname or "(sem host)"
+    port = parsed.port or 5432
+    return host, port, parsed.username
+
+
 def _is_transient_connect_error(exc: BaseException) -> bool:
     """Erros típicos quando o Postgres ainda não aceita ligações (ex.: Railway a arrancar serviços)."""
     if isinstance(exc, ConnectionRefusedError):
@@ -32,11 +64,9 @@ def _is_transient_connect_error(exc: BaseException) -> bool:
 
 
 def _resolve_database_url() -> str:
-    """DATABASE_URL (Neon/Railway) ou settings; normaliza para driver asyncpg."""
-    env_url = os.getenv("DATABASE_URL")
-    if env_url and env_url.strip():
-        raw = env_url.strip()
-    else:
+    """DATABASE_URL / DATABASE_PRIVATE_URL / POSTGRES_URL ou settings; normaliza para asyncpg."""
+    raw = _env_database_dsn()
+    if raw is None:
         raw = get_settings().database_url.strip()
     if raw.startswith("postgresql+asyncpg://"):
         return raw
@@ -80,7 +110,35 @@ def _url_without_sslmode_for_asyncpg(url: str) -> tuple[str, dict]:
 
 async def init_db() -> None:
     global _engine, async_session_maker
-    url, connect_args = _url_without_sslmode_for_asyncpg(_resolve_database_url())
+
+    if _running_on_railway() and _env_database_dsn() is None:
+        msg = (
+            "DATABASE_URL não está definida no serviço da API. Na Railway: abre o serviço da API → "
+            "Variables → + New Variable → tab Reference → escolhe o Postgres → "
+            "DATABASE_URL (ou DATABASE_PRIVATE_URL para rede privada)."
+        )
+        logger.error(msg)
+        raise RuntimeError(msg)
+
+    resolved = _resolve_database_url()
+    host, port, user = _parsed_pg_target(resolved)
+    if _env_database_dsn() is None:
+        logger.error(
+            "Nenhuma variável DATABASE_URL / DATABASE_PRIVATE_URL / POSTGRES_URL — a usar default "
+            "de config: host=%s port=%s (normalmente falha em container).",
+            host,
+            port,
+        )
+    else:
+        logger.info("Postgres alvo: %s:%s user=%s", host, port, user or "?")
+        if _running_on_railway() and host in ("127.0.0.1", "localhost", "::1"):
+            logger.error(
+                "DATABASE_URL aponta para %s — na Railway o Postgres não corre no mesmo container. "
+                "Substitui por uma variável Reference ao serviço Postgres.",
+                host,
+            )
+
+    url, connect_args = _url_without_sslmode_for_asyncpg(resolved)
     max_attempts = int(os.getenv("DB_CONNECT_RETRIES", "15"))
     delay = float(os.getenv("DB_CONNECT_RETRY_DELAY_SEC", "1.0"))
     delay_max = float(os.getenv("DB_CONNECT_RETRY_DELAY_MAX_SEC", "8.0"))
@@ -123,6 +181,11 @@ async def init_db() -> None:
             delay = min(delay * 1.5, delay_max)
 
     assert last_error is not None
+    logger.error(
+        "Esgotadas as tentativas de ligação a %s:%s — confirma DATABASE_URL (Reference ao Postgres) e que o Postgres está Running.",
+        host,
+        port,
+    )
     raise last_error
 
 

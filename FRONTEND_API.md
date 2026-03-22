@@ -268,6 +268,7 @@ O utilizador cola a **URL completa** da ficha no IGDB. O servidor valida domíni
 | `summary` | string \| null |
 | `image_url` | string \| null |
 | `youtube_url` | string \| null |
+| `youtube_thumbnail_url` | string \| null |
 | `igdb_url` | string |
 | `igdb_game_id` | string \| null |
 | `genres` | string[] |

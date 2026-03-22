@@ -171,6 +171,10 @@ class IgdbGameInfoResponse(BaseModel):
     summary: str | None = None
     image_url: str | None = None
     youtube_url: str | None = None
+    youtube_thumbnail_url: str | None = Field(
+        default=None,
+        description="Miniatura do trailer (YouTube), derivada do URL quando o HTML público expõe o vídeo",
+    )
     igdb_url: str
     igdb_game_id: str | None = None
     genres: list[str] = Field(default_factory=list)

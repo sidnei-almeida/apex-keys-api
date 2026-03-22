@@ -370,7 +370,7 @@ O repositório inclui [`railway.toml`](railway.toml) (comando de arranque + heal
 **`Connection refused` / errno 111 no arranque** — a API não está a alcançar o Postgres. Confirma:
 
 1. No **mesmo projecto** Railway, tens um serviço **PostgreSQL** a correr.
-2. No serviço da **API**, em **Variables** → **Add variable** → **Reference** (ou “Variable Reference”) → escolhe o plugin Postgres e a variável **`DATABASE_URL`** (ou `POSTGRES_URL` conforme o que o Postgres expõe). **Não** uses `localhost` / `127.0.0.1` como host na URL de produção: no deploy o Postgres é outro container.
+2. No serviço da **API**, em **Variables** → **New variable** → separador **Reference** → serviço **Postgres** → **`DATABASE_URL`**. Alternativa na rede privada Railway: referencia **`DATABASE_PRIVATE_URL`** (a app aceita `DATABASE_URL`, `DATABASE_PRIVATE_URL` ou `POSTGRES_URL`, por ordem). **Não** uses `localhost` / `127.0.0.1`: o Postgres é outro serviço. Se `DATABASE_URL` não existir no container da API, os logs mostram erro explícito e o arranque falha de imediato (em ambiente Railway).
 3. Garante que o deploy da API **não** corre antes do Postgres estar provisionado (redeploy depois de criar o Postgres, se for o caso).
 
 A app tenta ligar ao Postgres várias vezes no arranque (com backoff), configurável por `DB_CONNECT_RETRIES` e `DB_CONNECT_RETRY_DELAY_*` no `.env.example`.
