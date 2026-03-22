@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
-"""Insere usuários mock para testes: admin e usuário comum."""
+"""
+Utilizadores mock para desenvolvimento (opcional).
+
+Schema alinhado a app/models.py: User com balance Decimal, is_admin, whatsapp único.
+
+Não uses isto como substituto de create_admin em produção. Para admin real:
+  scripts/create_admin.py
+
+Uso:
+  python scripts/seed_test_data.py
+
+Ignora e-mails que já existem (idempotente por e-mail).
+"""
 
 from __future__ import annotations
 
@@ -16,6 +28,8 @@ from app.dotenv_loader import load_dotenv
 
 async def _main() -> None:
     load_dotenv()
+    from decimal import Decimal
+
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -47,7 +61,7 @@ async def _main() -> None:
                 email=email,
                 password_hash=hash_password(password),
                 whatsapp=wp,
-                balance=0,
+                balance=Decimal("0.00"),
                 is_admin=is_admin,
             )
             session.add(u)
@@ -56,7 +70,7 @@ async def _main() -> None:
         await session.commit()
 
     await engine.dispose()
-    print("\nDados de teste:")
+    print("\nDados de teste (.example.com — válido para Pydantic EmailStr):")
     print("  Admin: admin@apexkeys.example.com / senha12345")
     print("  User:  user@apexkeys.example.com / senha12345")
 

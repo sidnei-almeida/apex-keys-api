@@ -112,6 +112,18 @@ class AdminRaffleCreate(BaseModel):
     total_tickets: int = Field(..., gt=0)
 
 
+class RaffleUpdate(BaseModel):
+    """Actualização parcial de rifa (admin). `total_price` / `total_tickets` disparam recálculo de `ticket_price`."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    image_url: str | None = Field(default=None, max_length=1024)
+    video_id: str | None = Field(default=None, max_length=64, description="ID do vídeo no YouTube")
+    total_price: Decimal | None = Field(default=None, gt=0)
+    total_tickets: int | None = Field(default=None, gt=0)
+
+
 class PixDepositCreate(BaseModel):
     """Cria transação pendente para testes do webhook (valor em créditos)."""
 

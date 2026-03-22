@@ -40,7 +40,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
-app.include_router(admin.router, prefix="/admin", tags=["admin"])
+app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
 app.include_router(wallet.router, prefix="/wallet", tags=["wallet"])
 app.include_router(checkout.router, tags=["checkout"])
 app.include_router(webhooks.router, tags=["webhooks"])

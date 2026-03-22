@@ -43,7 +43,7 @@ Em **produção**, substitua pelo domínio real da API (variável de ambiente no
 
 ### Papéis
 
-- **`is_admin`** em `GET /auth/me` indica se o utilizador é administrador (útil para mostrar menus). **As rotas `/admin/*` validam de novo na base de dados** — não basta “inventar” admin no cliente.
+- **`is_admin`** em `GET /auth/me` indica se o utilizador é administrador (útil para mostrar menus). **As rotas `/api/v1/admin/*` validam de novo na base de dados** (`get_current_admin`) — não basta “inventar” admin no cliente.
 
 ---
 
@@ -60,9 +60,11 @@ Em **produção**, substitua pelo domínio real da API (variável de ambiente no
 | `POST` | `/wallet/mock-pix-intent` | Utilizador | Cria depósito Pix **mock** pendente + dados de QR fictícios |
 | `GET` | `/raffles` | — | Lista rifas; query opcional `?status=active\|sold_out\|finished\|canceled` |
 | `POST` | `/buy-ticket` | Utilizador | Compra um número de bilhete (saldo debitado na hora) |
-| `POST` | `/admin/raffles` | **Admin** | Cria rifa (preço por bilhete calculado no servidor) |
-| `POST` | `/admin/raffles/{raffle_id}/cancel` | **Admin** | Cancela rifa ativa e estorna bilhetes pagos |
-| `POST` | `/admin/users/{user_id}/adjust-balance` | **Admin** | Crédito ou débito manual de saldo |
+| `GET` | `/api/v1/admin/raffles/{raffle_id}` | **Admin** | Uma rifa (formulário de edição) |
+| `PUT` | `/api/v1/admin/raffles/{raffle_id}` | **Admin** | Actualização parcial (`RaffleUpdate`); recalcula `ticket_price` se preço ou quantidade forem enviados |
+| `POST` | `/api/v1/admin/raffles` | **Admin** | Cria rifa (preço por bilhete calculado no servidor) |
+| `POST` | `/api/v1/admin/raffles/{raffle_id}/cancel` | **Admin** | Cancela rifa ativa e estorna bilhetes pagos |
+| `POST` | `/api/v1/admin/users/{user_id}/adjust-balance` | **Admin** | Crédito ou débito manual de saldo |
 | `POST` | `/webhook/mp` | — | Mock de webhook (normalmente **backend**; ver nota abaixo) |
 | `POST` | `/igdb/game` | — | Metadados de jogo a partir da URL pública do IGDB |
 
@@ -159,11 +161,36 @@ Simula a criação de um Pix pendente. Gera uma linha em `transactions` com `typ
 
 ---
 
-## Admin (`/admin`) — JWT de utilizador **admin**
+## Admin (`/api/v1/admin`) — JWT de utilizador **admin**
 
 Todas exigem `Authorization: Bearer <token>` de um utilizador com `is_admin=true` na base de dados.
 
-### `POST /admin/raffles`
+### `GET /api/v1/admin/raffles/{raffle_id}`
+
+**Resposta `200`:** `RafflePublic` (mesmo formato que na listagem pública).
+
+**Erro:** `404` se o id não existir.
+
+### `PUT /api/v1/admin/raffles/{raffle_id}`
+
+**Corpo (`RaffleUpdate`)** — todos os campos opcionais; envia só o que queres alterar.
+
+| Campo | Tipo | Notas |
+|-------|------|--------|
+| `title` | string \| omitido | 1–255 caracteres se presente |
+| `image_url` | string \| null \| omitido | |
+| `video_id` | string \| null \| omitido | ID YouTube |
+| `total_price` | decimal > 0 \| omitido | Se presente (sozinho ou com `total_tickets`), participa no recálculo |
+| `total_tickets` | inteiro > 0 \| omitido | Idem |
+
+**Recálculo de `ticket_price`:** se o JSON incluir **`total_price` e/ou `total_tickets`**, o servidor usa os valores finais (mesclados com os actuais) e define  
+`ticket_price = round_half_up(total_price / total_tickets, 2 casas)` (Decimal, mesma função que na criação).
+
+**Restrições:** `400` se a rifa estiver **cancelada** e o pedido tentar alterar preço ou quantidade; `400` se `total_tickets` ficar **inferior** ao maior número de bilhete já vendido (`paid`).
+
+**Resposta `200`:** `RafflePublic` actualizado. Corpo `{}` não altera nada (no-op).
+
+### `POST /api/v1/admin/raffles`
 
 **Corpo (`AdminRaffleCreate`)**
 
@@ -179,13 +206,13 @@ O servidor calcula `ticket_price` = `total_price / total_tickets` arredondado a 
 
 **Resposta `201`:** `RafflePublic`.
 
-### `POST /admin/raffles/{raffle_id}/cancel`
+### `POST /api/v1/admin/raffles/{raffle_id}/cancel`
 
 Só rifas em estado `active`. Estorna bilhetes pagos e marca a rifa como `canceled`.
 
 **Resposta `200` — `RaffleCancelResponse`:** `raffle_id`, `status: "canceled"`, `refunds_issued` (quantidade de bilhetes estornados).
 
-### `POST /admin/users/{user_id}/adjust-balance`
+### `POST /api/v1/admin/users/{user_id}/adjust-balance`
 
 **Corpo (`AdminWalletAdjust`)**
 

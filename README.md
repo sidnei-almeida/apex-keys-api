@@ -65,9 +65,11 @@ A documentação interativa OpenAPI fica disponível em `/docs` e `/redoc` quand
 
 ### Painel administrativo
 
-- **Criar rifa** (`POST /admin/raffles`): título, imagem, vídeo (YouTube), preço total e quantidade de bilhetes; o **preço por bilhete** é calculado com divisão e arredondamento **half-up** a duas casas (`app/pricing.py`).
-- **Cancelar rifa** (`POST /admin/raffles/{id}/cancel`): só rifas `active`; estorna cada bilhete pago e regista `refund`.
-- **Ajuste manual de saldo** (`POST /admin/users/{user_id}/adjust-balance`): crédito ou débito com descrição opcional e registo `admin_adjustment` (útil para suporte e testes).
+- **Criar rifa** (`POST /api/v1/admin/raffles`): título, imagem, vídeo (YouTube), preço total e quantidade de bilhetes; o **preço por bilhete** é calculado com divisão e arredondamento **half-up** a duas casas (`app/pricing.py`).
+- **Consultar rifa (admin)** (`GET /api/v1/admin/raffles/{id}`): dados completos para formulário de edição.
+- **Actualizar rifa (admin)** (`PUT /api/v1/admin/raffles/{id}`): campos opcionais (`RaffleUpdate`); se `total_price` ou `total_tickets` forem enviados, **`ticket_price` é recalculado** com a mesma regra half-up; não altera preço/quantidade em rifas **canceladas**; `total_tickets` não pode ficar abaixo do maior número de bilhete já vendido.
+- **Cancelar rifa** (`POST /api/v1/admin/raffles/{id}/cancel`): só rifas `active`; estorna cada bilhete pago e regista `refund`.
+- **Ajuste manual de saldo** (`POST /api/v1/admin/users/{user_id}/adjust-balance`): crédito ou débito com descrição opcional e registo `admin_adjustment` (útil para suporte e testes).
 
 ### Metadados de jogos (IGDB)
 
@@ -77,10 +79,14 @@ A documentação interativa OpenAPI fica disponível em `/docs` e `/redoc` quand
 
 | Script | Uso |
 |--------|-----|
-| [`scripts/apply_schema.py`](scripts/apply_schema.py) | Aplica o mesmo esquema que o `init_db` (`create_all`) e termina. |
-| [`scripts/reset_and_apply_schema.py`](scripts/reset_and_apply_schema.py) | `drop_all` + `create_all` (apaga dados; usar com cuidado). |
-| [`scripts/seed_test_data.py`](scripts/seed_test_data.py) | Cria utilizadores de exemplo (admin + user) com palavra-passe definida no script. |
-| [`scripts/test_endpoints.py`](scripts/test_endpoints.py) | Percorre login, carteira, admin, rifas, mock Pix e webhook contra `http://localhost:8000`. |
+| [`scripts/apply_schema.py`](scripts/apply_schema.py) | Só `create_all` — cria tabelas em falta; **não apaga** dados. |
+| [`scripts/reset_and_apply_schema.py`](scripts/reset_and_apply_schema.py) | `drop_all` + `create_all` — **apaga toda a base**; depois corre [`create_admin.py`](scripts/create_admin.py) para o primeiro admin. |
+| [`scripts/schema_reset.sql`](scripts/schema_reset.sql) | Alternativa `psql`: `DROP TABLE` das quatro tabelas; depois `apply_schema.py` ou API. |
+| [`scripts/create_admin.py`](scripts/create_admin.py) | Cria ou actualiza **um** admin (edita e-mail/senha/WhatsApp no ficheiro). |
+| [`scripts/seed_test_data.py`](scripts/seed_test_data.py) | Opcional dev: dois utilizadores `.example.com` (admin + user de teste). |
+| [`scripts/test_endpoints.py`](scripts/test_endpoints.py) | Smoke test HTTP contra `http://localhost:8000`. |
+
+**Base nova + primeiro admin:** `python scripts/reset_and_apply_schema.py` → edita e corre `python scripts/create_admin.py`.
 
 Carregamento de `.env` na raiz é partilhado por `dev.py` e pelos scripts via [`app/dotenv_loader.py`](app/dotenv_loader.py).
 
@@ -242,9 +248,11 @@ O token é emitido em `POST /auth/login` e identifica o usuário pelo claim `sub
 | `POST` | `/wallet/mock-pix-intent` | Usuário | Cria `pix_deposit` **pending** + payload mock (desenvolvimento) |
 | `GET` | `/raffles` | — | Lista rifas; query opcional `?status=active\|sold_out\|finished\|canceled` |
 | `POST` | `/buy-ticket` | Usuário | Compra atômica de um número em rifa `active` |
-| `POST` | `/admin/raffles` | **Admin** | Cria rifa (`ticket_price` = divisão de `total_price` / `total_tickets`, **half-up**, 2 casas) |
-| `POST` | `/admin/raffles/{raffle_id}/cancel` | **Admin** | Cancela rifa ativa e estorna bilhetes pagos |
-| `POST` | `/admin/users/{user_id}/adjust-balance` | **Admin** | Ajuste manual de saldo (+/−) com descrição opcional; registo `admin_adjustment` |
+| `GET` | `/api/v1/admin/raffles/{raffle_id}` | **Admin** | Detalhe da rifa (edição) |
+| `PUT` | `/api/v1/admin/raffles/{raffle_id}` | **Admin** | Actualização parcial; recalcula `ticket_price` se `total_price` ou `total_tickets` vierem no corpo |
+| `POST` | `/api/v1/admin/raffles` | **Admin** | Cria rifa (`ticket_price` = divisão de `total_price` / `total_tickets`, **half-up**, 2 casas) |
+| `POST` | `/api/v1/admin/raffles/{raffle_id}/cancel` | **Admin** | Cancela rifa ativa e estorna bilhetes pagos |
+| `POST` | `/api/v1/admin/users/{user_id}/adjust-balance` | **Admin** | Ajuste manual de saldo (+/−) com descrição opcional; registo `admin_adjustment` |
 | `POST` | `/webhook/mp` | — | Mock Mercado Pago: aprovação de Pix pendente por `gateway_reference` |
 | `POST` | `/igdb/game` | — | Scrape IGDB: corpo JSON `{ "url": "https://www.igdb.com/games/..." }` (sem login) |
 | `GET` | `/health` | — | Status do serviço |
@@ -293,12 +301,22 @@ Detalhe dos campos: [`FRONTEND_API.md`](FRONTEND_API.md).
 }
 ```
 
-**Ajuste manual de saldo (admin)** (`POST /admin/users/{user_id}/adjust-balance`)
+**Ajuste manual de saldo (admin)** (`POST /api/v1/admin/users/{user_id}/adjust-balance`)
 
 ```json
 {
   "amount": "50.00",
   "description": "Crédito promocional"
+}
+```
+
+**Actualizar rifa (admin)** (`PUT /api/v1/admin/raffles/{raffle_id}`) — campos opcionais; enviar `total_price` e/ou `total_tickets` força recálculo de `ticket_price` (half-up).
+
+```json
+{
+  "title": "Novo título",
+  "total_price": "199.99",
+  "total_tickets": 20
 }
 ```
 
@@ -345,17 +363,26 @@ Códigos HTTP usuais: `200` / `201` sucesso, `400` regra de negócio, `401` / `4
 
 Desenvolvimento local com o runtime da Vercel (CLI ≥ 48.1.8): `vercel dev`.
 
-### Outros (Railway, Fly.io, VM, etc.)
+### Railway
+
+O repositório inclui [`railway.toml`](railway.toml) (comando de arranque + healthcheck em `/health`) e [`Procfile`](Procfile) como alternativa.
+
+1. **Serviço Postgres** na mesma app: em Variables do serviço da API, referencia `DATABASE_URL` do Postgres (Railway injeta `PORT` automaticamente).
+2. **Variáveis:** `JWT_SECRET` (obrigatório em produção), `CORS_ORIGINS` (domínio do frontend), opcionalmente `DATABASE_SSL_NO_VERIFY` só se o teu ambiente exigir.
+3. **Python:** `.python-version` está em `3.12` (Nixpacks usa isto no build).
+4. **Schema:** no primeiro deploy a API corre `create_all` no `lifespan`; ou corre `scripts/apply_schema.py` uma vez contra a URL interna.
+5. Se o **build** falhar, abre o log completo no painel e confirma a mensagem de erro (dependência, Python, etc.). Sem o log exacto não dá para diagnosticar à distância.
+
+### Outros (Fly.io, VM, etc.)
 
 1. Defina as mesmas variáveis descritas em [`.env.example`](.env.example) no painel do provedor.
-2. Use a **URL interna** do Postgres para o serviço da API quando ambos estiverem na mesma rede.
-3. Comando típico de processo web:
+2. Comando típico de processo web:
 
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
 ```
 
-4. Garanta que o **schema** foi criado uma vez (`init_db`, `apply_schema.py` ou DDL manual) antes de receber tráfego.
+3. Garanta que o **schema** foi criado uma vez (`init_db`, `apply_schema.py` ou DDL manual) antes de receber tráfego.
 
 ---
 
@@ -396,9 +423,11 @@ apex-keys-api/
 │       ├── checkout.py
 │       ├── webhooks.py
 │       └── igdb.py
-├── scripts/              # apply_schema, reset, seed, test_endpoints
+├── scripts/              # apply_schema, reset, create_admin, seed, test_endpoints, schema_reset.sql
 ├── migrations/           # SQL legado / notas de migração (se aplicável)
 ├── images/               # Logotipo do README e ativos de marca
+├── railway.toml          # Deploy Railway (startCommand, healthcheck)
+├── Procfile              # Comando web (Railway / outros)
 ├── dev.py                # Arranque local (uvicorn + reload)
 ├── index.py              # Entry ASGI para Vercel (reexporta app.main:app)
 ├── pyproject.toml        # Metadados + script `app` para a Vercel

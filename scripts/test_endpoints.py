@@ -64,9 +64,9 @@ def main() -> int:
         log(f"  user_id={user_id}, balance={me['balance']}\n")
 
         # 5. Admin ajusta saldo do user (entry manual)
-        log("POST /admin/users/{id}/adjust-balance (+50.00)")
+        log("POST /api/v1/admin/users/{id}/adjust-balance (+50.00)")
         r = client.post(
-            f"{BASE}/admin/users/{user_id}/adjust-balance",
+            f"{BASE}/api/v1/admin/users/{user_id}/adjust-balance",
             headers={"Authorization": f"Bearer {admin_token}"},
             json={
                 "amount": "50.00",
@@ -98,9 +98,9 @@ def main() -> int:
         log(f"  {len(txs)} transação(ões): {[(t['type'], t['amount'], t['status']) for t in txs]}\n")
 
         # 8. Admin cria rifa
-        log("POST /admin/raffles")
+        log("POST /api/v1/admin/raffles")
         r = client.post(
-            f"{BASE}/admin/raffles",
+            f"{BASE}/api/v1/admin/raffles",
             headers={"Authorization": f"Bearer {admin_token}"},
             json={
                 "title": "Rifa Teste — Jogo X",
@@ -114,6 +114,26 @@ def main() -> int:
         raffle = r.json()
         raffle_id = raffle["id"]
         log(f"  raffle_id={raffle_id}, ticket_price={raffle['ticket_price']}, status={raffle['status']}\n")
+
+        # 8b. Admin obtém rifa (formulário de edição)
+        log("GET /api/v1/admin/raffles/{id}")
+        r = client.get(
+            f"{BASE}/api/v1/admin/raffles/{raffle_id}",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        r.raise_for_status()
+        log(f"  title={r.json().get('title')}\n")
+
+        # 8c. Admin actualiza rifa (recalcula ticket_price se preço/quantidade mudam)
+        log("PUT /api/v1/admin/raffles/{id} (total_price + total_tickets)")
+        r = client.put(
+            f"{BASE}/api/v1/admin/raffles/{raffle_id}",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"total_price": "49.99", "total_tickets": 10},
+        )
+        r.raise_for_status()
+        upd = r.json()
+        log(f"  ticket_price={upd['ticket_price']}, total_price={upd['total_price']}\n")
 
         # 9. Listar rifas
         log("GET /raffles")

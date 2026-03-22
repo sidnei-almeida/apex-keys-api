@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Aplica Base.metadata.create_all (mesmo esquema do arranque da API)."""
+"""
+Aplica tabelas em falta com Base.metadata.create_all (igual ao init_db da API).
+
+Não apaga dados nem remove colunas. Para base totalmente vazia com schema limpo, usa:
+  python scripts/reset_and_apply_schema.py
+
+Requer DATABASE_URL no .env.
+"""
 
 from __future__ import annotations
 

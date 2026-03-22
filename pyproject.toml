@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "apex-keys-api"
 version = "0.1.0"
@@ -6,3 +10,7 @@ requires-python = ">=3.11"
 # Ponto de entrada ASGI alternativo para a Vercel (detecção automática usa index.py).
 [project.scripts]
 app = "app.main:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]

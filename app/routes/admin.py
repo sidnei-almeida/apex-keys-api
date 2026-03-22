@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_session
@@ -13,6 +13,7 @@ from app.schemas import (
     AdminWalletAdjustResponse,
     RaffleCancelResponse,
     RafflePublic,
+    RaffleUpdate,
 )
 from app.security import get_current_admin
 
@@ -72,6 +73,77 @@ async def create_raffle(
         status=RaffleStatus.active.value,
     )
     session.add(raffle)
+    await session.flush()
+    await session.refresh(raffle)
+    return RafflePublic.model_validate(raffle)
+
+
+@router.get("/raffles/{raffle_id}", response_model=RafflePublic)
+async def get_raffle_admin(
+    raffle_id: UUID,
+    _admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_session),
+) -> RafflePublic:
+    result = await session.execute(select(Raffle).where(Raffle.id == raffle_id))
+    raffle = result.scalar_one_or_none()
+    if raffle is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sorteio não encontrado")
+    return RafflePublic.model_validate(raffle)
+
+
+@router.put("/raffles/{raffle_id}", response_model=RafflePublic)
+async def update_raffle(
+    raffle_id: UUID,
+    body: RaffleUpdate,
+    _admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_session),
+) -> RafflePublic:
+    r_result = await session.execute(
+        select(Raffle).where(Raffle.id == raffle_id).with_for_update(),
+    )
+    raffle = r_result.scalar_one_or_none()
+    if raffle is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sorteio não encontrado")
+
+    data = body.model_dump(exclude_unset=True)
+    if not data:
+        return RafflePublic.model_validate(raffle)
+
+    need_recalc = "total_price" in data or "total_tickets" in data
+    if need_recalc:
+        if raffle.status == RaffleStatus.canceled.value:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Não é possível alterar preço ou quantidade de bilhetes num sorteio cancelado",
+            )
+        new_total_price = data["total_price"] if "total_price" in data else raffle.total_price
+        new_total_tickets = data["total_tickets"] if "total_tickets" in data else raffle.total_tickets
+
+        max_num_result = await session.execute(
+            select(func.max(Ticket.ticket_number)).where(
+                Ticket.raffle_id == raffle.id,
+                Ticket.status == "paid",
+            ),
+        )
+        max_sold_number = max_num_result.scalar()
+        min_tickets = int(max_sold_number or 0)
+        if new_total_tickets < min_tickets:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"total_tickets não pode ser inferior a {min_tickets} "
+                    "(já existem bilhetes pagos até esse número)"
+                ),
+            )
+
+        raffle.total_price = new_total_price
+        raffle.total_tickets = new_total_tickets
+        raffle.ticket_price = tactical_ticket_price(new_total_price, new_total_tickets)
+
+    for key in ("title", "image_url", "video_id"):
+        if key in data:
+            setattr(raffle, key, data[key])
+
     await session.flush()
     await session.refresh(raffle)
     return RafflePublic.model_validate(raffle)

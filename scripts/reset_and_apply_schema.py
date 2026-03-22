@@ -1,5 +1,21 @@
 #!/usr/bin/env python3
-"""Apaga todas as tabelas da app e reaplica o schema (create_all)."""
+"""
+Limpa a base de dados e recria o schema actual (app/models.py).
+
+Executa Base.metadata.drop_all + create_all sobre:
+  users, raffles, tickets, transactions
+
+⚠️  APAGA TODOS OS DADOS.
+
+Uso:
+  python scripts/reset_and_apply_schema.py
+
+Depois, para o primeiro administrador (sem API pública de promoção):
+  1. Edita scripts/create_admin.py (e-mail, senha, WhatsApp)
+  2. python scripts/create_admin.py
+
+Requer DATABASE_URL no .env (ou ambiente). Mesma lógica SSL que app/database.py.
+"""
 
 from __future__ import annotations
 
@@ -37,4 +53,5 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Erro: {e}", file=sys.stderr)
         sys.exit(1)
-    print("DB limpo e esquema reaplicado.")
+    print("DB limpo e esquema reaplicado (models actuais).")
+    print("Próximo passo: edita scripts/create_admin.py e corre: python scripts/create_admin.py")
