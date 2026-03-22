@@ -367,11 +367,20 @@ Desenvolvimento local com o runtime da Vercel (CLI ≥ 48.1.8): `vercel dev`.
 
 O repositório inclui [`railway.toml`](railway.toml) (comando de arranque + healthcheck em `/health`) e [`Procfile`](Procfile) como alternativa.
 
-1. **Serviço Postgres** na mesma app: em Variables do serviço da API, referencia `DATABASE_URL` do Postgres (Railway injeta `PORT` automaticamente).
-2. **Variáveis:** `JWT_SECRET` (obrigatório em produção), `CORS_ORIGINS` (domínio do frontend), opcionalmente `DATABASE_SSL_NO_VERIFY` só se o teu ambiente exigir.
-3. **Python:** `.python-version` está em `3.12` (Nixpacks usa isto no build).
-4. **Schema:** no primeiro deploy a API corre `create_all` no `lifespan`; ou corre `scripts/apply_schema.py` uma vez contra a URL interna.
-5. Se o **build** falhar, abre o log completo no painel e confirma a mensagem de erro (dependência, Python, etc.). Sem o log exacto não dá para diagnosticar à distância.
+**`Connection refused` / errno 111 no arranque** — a API não está a alcançar o Postgres. Confirma:
+
+1. No **mesmo projecto** Railway, tens um serviço **PostgreSQL** a correr.
+2. No serviço da **API**, em **Variables** → **Add variable** → **Reference** (ou “Variable Reference”) → escolhe o plugin Postgres e a variável **`DATABASE_URL`** (ou `POSTGRES_URL` conforme o que o Postgres expõe). **Não** uses `localhost` / `127.0.0.1` como host na URL de produção: no deploy o Postgres é outro container.
+3. Garante que o deploy da API **não** corre antes do Postgres estar provisionado (redeploy depois de criar o Postgres, se for o caso).
+
+A app tenta ligar ao Postgres várias vezes no arranque (com backoff), configurável por `DB_CONNECT_RETRIES` e `DB_CONNECT_RETRY_DELAY_*` no `.env.example`.
+
+Checklist geral:
+
+1. **Variáveis da API:** `DATABASE_URL` referenciada do Postgres, `JWT_SECRET`, `CORS_ORIGINS`; `PORT` é injectado pela Railway.
+2. **Python:** `.python-version` → `3.12` (Nixpacks).
+3. **Schema:** no primeiro deploy útil, o `lifespan` corre `create_all`; podes usar `scripts/apply_schema.py` contra a URL interna se precisares.
+4. Se o **build** falhar, copia o log completo; erros de **runtime** após build costumam ser `DATABASE_URL` ou ordem de arranque dos serviços.
 
 ### Outros (Fly.io, VM, etc.)
 
