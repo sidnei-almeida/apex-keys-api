@@ -1,53 +1,77 @@
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
-from typing import Any
+from __future__ import annotations
 
-import asyncpg
+import os
+import ssl
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import get_settings
+from app.models import Base
 
-_pool: asyncpg.Pool | None = None
-
-
-async def init_pool() -> None:
-    global _pool
-    if _pool is not None:
-        return
-    settings = get_settings()
-    _pool = await asyncpg.create_pool(dsn=settings.database_url, min_size=1, max_size=10)
+_engine: AsyncEngine | None = None
+async_session_maker: async_sessionmaker[AsyncSession] | None = None
 
 
-async def close_pool() -> None:
-    global _pool
-    if _pool is not None:
-        await _pool.close()
-        _pool = None
+def _resolve_database_url() -> str:
+    """DATABASE_URL (Neon/Railway) ou settings; normaliza para driver asyncpg."""
+    env_url = os.getenv("DATABASE_URL")
+    if env_url and env_url.strip():
+        raw = env_url.strip()
+    else:
+        raw = get_settings().database_url.strip()
+    if raw.startswith("postgresql+asyncpg://"):
+        return raw
+    if raw.startswith("postgres://"):
+        return raw.replace("postgres://", "postgresql+asyncpg://", 1)
+    if raw.startswith("postgresql://"):
+        return raw.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return raw
 
 
-def get_pool() -> asyncpg.Pool:
-    if _pool is None:
-        raise RuntimeError("Pool de banco não inicializado")
-    return _pool
+def _url_without_sslmode_for_asyncpg(url: str) -> tuple[str, dict]:
+    """
+    asyncpg não aceita o parâmetro sslmode na URL como keyword de connect();
+    remove-o da query e activa SSL via connect_args quando necessário.
+    """
+    parsed = urlparse(url)
+    pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    connect_args: dict = {}
+    kept: list[tuple[str, str]] = []
+    for k, v in pairs:
+        lk = k.lower()
+        if lk == "sslmode":
+            if v.lower() in ("require", "verify-ca", "verify-full", "allow", "prefer"):
+                connect_args["ssl"] = True
+            if v.lower() == "disable":
+                connect_args.pop("ssl", None)
+            continue
+        if lk == "ssl" and v.lower() in ("1", "true", "on", "require"):
+            connect_args["ssl"] = True
+            continue
+        kept.append((k, v))
+    new_query = urlencode(kept)
+    clean = urlunparse(parsed._replace(query=new_query))
+    if connect_args.get("ssl") is True:
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        connect_args["ssl"] = ssl_context
+    return clean, connect_args
 
 
-async def fetch_one(query: str, *args: Any) -> asyncpg.Record | None:
-    async with get_pool().acquire() as conn:
-        return await conn.fetchrow(query, *args)
+async def init_db() -> None:
+    global _engine, async_session_maker
+    url, connect_args = _url_without_sslmode_for_asyncpg(_resolve_database_url())
+    _engine = create_async_engine(url, echo=False, connect_args=connect_args)
+    async_session_maker = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
+    async with _engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 
-async def fetch_all(query: str, *args: Any) -> list[asyncpg.Record]:
-    async with get_pool().acquire() as conn:
-        return await conn.fetch(query, *args)
-
-
-async def execute(query: str, *args: Any) -> str:
-    async with get_pool().acquire() as conn:
-        return await conn.execute(query, *args)
-
-
-@asynccontextmanager
-async def transaction() -> AsyncIterator[asyncpg.Connection]:
-    pool = get_pool()
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            yield conn
+async def close_db() -> None:
+    global _engine, async_session_maker
+    if _engine is not None:
+        await _engine.dispose()
+        _engine = None
+    async_session_maker = None

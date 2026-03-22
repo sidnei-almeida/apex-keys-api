@@ -1,43 +1,55 @@
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- Referência alinhada a app/models.py (fonte canónica em runtime).
+-- A API cria tabelas com SQLAlchemy create_all em init_db; mantém este ficheiro para
+-- revisão manual, Neon/Railway ou ferramentas que esperem SQL estático.
+-- Neon: extensão uuid opcional; SQLAlchemy usa uuid.UUID em Python.
 
-CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name VARCHAR(255) NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    hashed_password VARCHAR(255) NOT NULL,
-    whatsapp VARCHAR(20) UNIQUE NOT NULL,
-    role VARCHAR(20) DEFAULT 'user' CHECK (role IN ('user', 'admin')),
-    wallet_balance DECIMAL(10, 2) DEFAULT 0.00 CHECK (wallet_balance >= 0),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY,
+    full_name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    whatsapp VARCHAR(20) NOT NULL UNIQUE,
+    balance NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE raffles (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+CREATE INDEX IF NOT EXISTS ix_users_email ON users (email);
+
+CREATE TABLE IF NOT EXISTS raffles (
+    id UUID PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
-    total_numbers INTEGER NOT NULL CHECK (total_numbers > 0),
-    price_per_number DECIMAL(10, 2) NOT NULL CHECK (price_per_number > 0),
-    status VARCHAR(20) DEFAULT 'open' CHECK (status IN ('open', 'closed', 'canceled')),
-    winner_ticket_id UUID,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    image_url VARCHAR(1024),
+    video_id VARCHAR(64),
+    total_price NUMERIC(12, 2) NOT NULL,
+    total_tickets INTEGER NOT NULL,
+    ticket_price NUMERIC(12, 2) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'active',
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE tickets (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    raffle_id UUID REFERENCES raffles(id) NOT NULL,
-    user_id UUID REFERENCES users(id) NOT NULL,
+CREATE TABLE IF NOT EXISTS tickets (
+    id UUID PRIMARY KEY,
+    raffle_id UUID NOT NULL REFERENCES raffles (id),
+    user_id UUID NOT NULL REFERENCES users (id),
     ticket_number INTEGER NOT NULL,
-    status VARCHAR(20) DEFAULT 'reserved' CHECK (status IN ('reserved', 'paid')),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(raffle_id, ticket_number)
+    status VARCHAR(20) NOT NULL DEFAULT 'paid',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT uq_ticket_raffle_number UNIQUE (raffle_id, ticket_number)
 );
 
-CREATE TABLE transactions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID REFERENCES users(id) NOT NULL,
-    amount DECIMAL(10, 2) NOT NULL,
-    type VARCHAR(50) NOT NULL CHECK (type IN ('pix_deposit', 'purchase', 'refund', 'admin_adjustment')),
-    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed')),
+CREATE INDEX IF NOT EXISTS ix_tickets_raffle_id ON tickets (raffle_id);
+CREATE INDEX IF NOT EXISTS ix_tickets_user_id ON tickets (user_id);
+
+CREATE TABLE IF NOT EXISTS transactions (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users (id),
+    amount NUMERIC(12, 2) NOT NULL,
+    type VARCHAR(50) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
     gateway_reference VARCHAR(255),
     description TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS ix_transactions_user_id ON transactions (user_id);

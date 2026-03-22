@@ -11,6 +11,10 @@ class Settings(BaseSettings):
         default="postgresql://postgres:postgres@127.0.0.1:5432/apex_keys",
         description="DSN PostgreSQL (obrigatório em produção)",
     )
+    database_ssl_no_verify: bool = Field(
+        default=False,
+        description="Desactiva verificação SSL do Postgres (ex.: Railway local; não usar em produção pública sem avaliar risco)",
+    )
     jwt_secret: str = Field(
         default="altere-em-producao-use-um-segredo-longo",
         description="Segredo JWT (obrigatório em produção)",

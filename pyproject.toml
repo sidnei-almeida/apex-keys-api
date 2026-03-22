@@ -1,0 +1,8 @@
+[project]
+name = "apex-keys-api"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+# Ponto de entrada ASGI alternativo para a Vercel (detecção automática usa index.py).
+[project.scripts]
+app = "app.main:app"

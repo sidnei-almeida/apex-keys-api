@@ -7,8 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
-from app.database import close_pool, init_pool
-from app.routes import auth, checkout, wallet, webhooks
+from app.database import close_db, init_db
+from app.routes import admin, auth, checkout, igdb, wallet, webhooks
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("apex_keys")
@@ -16,9 +16,9 @@ logger = logging.getLogger("apex_keys")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_pool()
+    await init_db()
     yield
-    await close_pool()
+    await close_db()
 
 
 app = FastAPI(
@@ -40,9 +40,11 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
+app.include_router(admin.router, prefix="/admin", tags=["admin"])
 app.include_router(wallet.router, prefix="/wallet", tags=["wallet"])
 app.include_router(checkout.router, tags=["checkout"])
 app.include_router(webhooks.router, tags=["webhooks"])
+app.include_router(igdb.router, prefix="/igdb", tags=["igdb"])
 
 
 @app.exception_handler(RequestValidationError)

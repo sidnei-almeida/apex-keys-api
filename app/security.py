@@ -2,23 +2,26 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.deps import get_session
+from app.models import User
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def hash_password(plain: str) -> str:
-    return pwd_context.hash(plain)
+    return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("ascii")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("ascii"))
 
 
 def create_access_token(subject: str, extra_claims: dict[str, Any] | None = None) -> str:
@@ -58,13 +61,15 @@ async def get_current_user_id(
         ) from None
 
 
-async def get_current_admin(user_id: UUID = Depends(get_current_user_id)) -> UUID:
-    from app.database import fetch_one
-
-    row = await fetch_one(
-        "SELECT role FROM users WHERE id = $1",
-        user_id,
-    )
-    if row is None or row["role"] != "admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acesso restrito a administradores")
-    return user_id
+async def get_current_admin(
+    user_id: UUID = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_session),
+) -> User:
+    result = await session.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None or not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso restrito a administradores",
+        )
+    return user
