@@ -140,6 +140,12 @@ class RafflePublic(BaseModel):
     created_at: datetime
 
 
+class RaffleListOut(RafflePublic):
+    """RafflePublic + quantidade de bilhetes vendidos (para listagem pública)."""
+
+    sold: int = 0
+
+
 class MyTicketOut(BaseModel):
     """Bilhete do usuário com dados da rifa."""
 
