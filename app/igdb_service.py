@@ -18,6 +18,8 @@ import cloudscraper
 import httpx
 from bs4 import BeautifulSoup
 
+from app.config import get_settings
+
 logger = logging.getLogger("apex_keys")
 
 _YOUTUBE_ID_IN_URL = re.compile(
@@ -518,22 +520,58 @@ async def lookup_igdb_game_url(
     page_url: str,
     http_client: httpx.AsyncClient | None = None,
 ) -> dict[str, Any]:
-    """Scrape a partir da URL completa da ficha do jogo no IGDB."""
+    """
+    Scrape a partir da URL completa da ficha do jogo no IGDB.
+
+    Usa atraso inicial (evitar sobrecarga Cloudflare) e retries automáticos se
+    o pedido falhar (timeout, 403, desafio) ou o HTML vier sem dados úteis.
+    O frontend pode mostrar loading durante o tempo total (≈5s + tentativas).
+    """
     canonical, slug = normalize_igdb_game_url(page_url)
-    html, status = await fetch_igdb_page(canonical, http_client)
+    settings = get_settings()
+    delay_sec = max(0.0, float(settings.igdb_initial_delay_sec or 5))
+    max_retries = max(0, int(settings.igdb_max_retries or 2))
+    last_error: str | None = None
 
-    if status == 404 or "doesn't exist" in html.lower() or "page you were looking for" in html.lower():
-        raise LookupError(f"jogo não encontrado ou URL inválida (slug: {slug})")
+    if delay_sec > 0:
+        await asyncio.sleep(delay_sec)
 
-    if status in (403, 503) or "cf-mitigated" in html.lower():
-        raise LookupError(
-            "não foi possível obter a página do IGDB (bloqueio ou desafio não resolvido). "
-            "O cloudscraper reduz falhas de Cloudflare, mas não garante 100% em todos os ambientes."
-        )
+    for attempt in range(max_retries + 1):
+        try:
+            html, status = await fetch_igdb_page(canonical, http_client)
+        except Exception as e:
+            last_error = str(e)
+            logger.warning("IGDB fetch attempt %d failed: %s", attempt + 1, last_error)
+            if attempt < max_retries:
+                await asyncio.sleep(3)
+                continue
+            raise LookupError(
+                f"não foi possível obter a página do IGDB após {max_retries + 1} tentativa(s). "
+                f"Erro: {last_error}"
+            ) from e
 
-    parsed = parse_igdb_public_html(html, slug)
-    parsed["igdb_url"] = canonical
-    if not parsed.get("image_url") and not parsed.get("title"):
-        raise LookupError("não foi possível extrair dados úteis do HTML")
+        if status == 404 or "doesn't exist" in (html or "").lower() or "page you were looking for" in (html or "").lower():
+            raise LookupError(f"jogo não encontrado ou URL inválida (slug: {slug})")
 
-    return parsed
+        if status in (403, 503) or "cf-mitigated" in (html or "").lower() or _html_is_cloudflare_challenge(html or ""):
+            last_error = "bloqueio ou desafio Cloudflare"
+            logger.warning("IGDB attempt %d: %s (status=%s)", attempt + 1, last_error, status)
+            if attempt < max_retries:
+                await asyncio.sleep(3)
+                continue
+            raise LookupError(
+                "não foi possível obter a página do IGDB (bloqueio ou desafio não resolvido) após "
+                f"{max_retries + 1} tentativa(s). O cloudscraper reduz falhas, mas não garante 100%."
+            )
+
+        parsed = parse_igdb_public_html(html, slug)
+        parsed["igdb_url"] = canonical
+        if not parsed.get("image_url") and not parsed.get("title"):
+            last_error = "HTML sem dados úteis (sem título nem capa)"
+            logger.warning("IGDB attempt %d: %s", attempt + 1, last_error)
+            if attempt < max_retries:
+                await asyncio.sleep(3)
+                continue
+            raise LookupError("não foi possível extrair dados úteis do HTML")
+
+        return parsed

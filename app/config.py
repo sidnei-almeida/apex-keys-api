@@ -22,6 +22,14 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     cors_origins: str = ""
+    igdb_initial_delay_sec: float = Field(
+        default=5.0,
+        description="Atraso em segundos antes do primeiro pedido ao IGDB (evitar sobrecarga Cloudflare)",
+    )
+    igdb_max_retries: int = Field(
+        default=2,
+        description="Tentativas extras se pedido falhar ou HTML vier vazio/desafio (total = 1 + este valor)",
+    )
 
     def cors_origin_list(self) -> list[str]:
         """
