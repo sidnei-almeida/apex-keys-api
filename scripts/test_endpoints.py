@@ -142,6 +142,24 @@ def main() -> int:
         raffles = r.json()
         log(f"  {len(raffles)} rifa(s)\n")
 
+        # 9b. Admin apaga rifa (sem vendas → 200)
+        log("DELETE /api/v1/admin/raffles/{id}")
+        r = client.delete(
+            f"{BASE}/api/v1/admin/raffles/{raffle_id}",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        r.raise_for_status()
+        log(f"  tickets_removed={r.json().get('tickets_removed')}\n")
+
+        log("GET /api/v1/admin/raffles/{id} (esperado 404)")
+        r = client.get(
+            f"{BASE}/api/v1/admin/raffles/{raffle_id}",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        if r.status_code != 404:
+            raise RuntimeError(f"Esperado 404 após delete, obtido {r.status_code}: {r.text}")
+        log("  404 OK\n")
+
         # 10. Mock Pix: user cria intent pendente
         gateway_ref = f"mock-{uuid.uuid4().hex[:12]}"
         log("POST /wallet/mock-pix-intent (user)")

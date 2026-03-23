@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_session
@@ -12,6 +12,7 @@ from app.schemas import (
     AdminWalletAdjust,
     AdminWalletAdjustResponse,
     RaffleCancelResponse,
+    RaffleDeleteResponse,
     RafflePublic,
     RaffleUpdate,
 )
@@ -197,3 +198,51 @@ async def cancel_raffle(
         refunds += 1
 
     return RaffleCancelResponse(raffle_id=raffle_id, status="canceled", refunds_issued=refunds)
+
+
+@router.delete("/raffles/{raffle_id}", response_model=RaffleDeleteResponse)
+async def delete_raffle(
+    raffle_id: UUID,
+    _admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_session),
+) -> RaffleDeleteResponse:
+    """
+    Remove a rifa e todos os bilhetes (`tickets`) ligados a ela.
+
+    Se ainda existirem bilhetes pagos e a rifa **não** estiver cancelada, responde 409:
+    é necessário cancelar antes (`POST .../cancel`) para estornar os compradores.
+    Transações (`transactions`) na carteira mantêm-se como histórico (sem FK para a rifa).
+    """
+    r_result = await session.execute(
+        select(Raffle).where(Raffle.id == raffle_id).with_for_update(),
+    )
+    raffle = r_result.scalar_one_or_none()
+    if raffle is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sorteio não encontrado")
+
+    if raffle.status != RaffleStatus.canceled.value:
+        paid_count_result = await session.execute(
+            select(func.count())
+            .select_from(Ticket)
+            .where(Ticket.raffle_id == raffle_id, Ticket.status == "paid"),
+        )
+        if int(paid_count_result.scalar_one() or 0) > 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Esta rifa tem bilhetes pagos. Cancele primeiro com "
+                    "POST /api/v1/admin/raffles/{id}/cancel para estornar os compradores; "
+                    "depois pode apagar."
+                ),
+            )
+
+    count_result = await session.execute(
+        select(func.count()).select_from(Ticket).where(Ticket.raffle_id == raffle_id),
+    )
+    tickets_removed = int(count_result.scalar_one() or 0)
+
+    await session.execute(delete(Ticket).where(Ticket.raffle_id == raffle_id))
+    await session.execute(delete(Raffle).where(Raffle.id == raffle_id))
+    await session.flush()
+
+    return RaffleDeleteResponse(raffle_id=raffle_id, tickets_removed=tickets_removed)

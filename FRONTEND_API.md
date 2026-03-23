@@ -64,6 +64,7 @@ Em **produção**, substitua pelo domínio real da API (variável de ambiente no
 | `PUT` | `/api/v1/admin/raffles/{raffle_id}` | **Admin** | Actualização parcial (`RaffleUpdate`); recalcula `ticket_price` se preço ou quantidade forem enviados |
 | `POST` | `/api/v1/admin/raffles` | **Admin** | Cria rifa (preço por bilhete calculado no servidor) |
 | `POST` | `/api/v1/admin/raffles/{raffle_id}/cancel` | **Admin** | Cancela rifa ativa e estorna bilhetes pagos |
+| `DELETE` | `/api/v1/admin/raffles/{raffle_id}` | **Admin** | Apaga rifa e bilhetes na BD; **409** se existirem bilhetes pagos e a rifa não estiver `canceled` (cancelar antes) |
 | `POST` | `/api/v1/admin/users/{user_id}/adjust-balance` | **Admin** | Crédito ou débito manual de saldo |
 | `POST` | `/webhook/mp` | — | Mock de webhook (normalmente **backend**; ver nota abaixo) |
 | `POST` | `/igdb/game` | — | Metadados de jogo a partir da URL pública do IGDB |
@@ -211,6 +212,14 @@ O servidor calcula `ticket_price` = `total_price / total_tickets` arredondado a 
 Só rifas em estado `active`. Estorna bilhetes pagos e marca a rifa como `canceled`.
 
 **Resposta `200` — `RaffleCancelResponse`:** `raffle_id`, `status: "canceled"`, `refunds_issued` (quantidade de bilhetes estornados).
+
+### `DELETE /api/v1/admin/raffles/{raffle_id}`
+
+Remove a rifa e **todos** os registos de bilhetes (`tickets`) dessa rifa.
+
+**Regra:** se existirem bilhetes com `status` pago (`paid`) e a rifa **não** estiver `canceled`, a API responde **409** — é necessário chamar antes `POST .../cancel` para estornar compradores. Rifas sem vendas ou já `canceled` podem ser apagadas.
+
+**Resposta `200` — `RaffleDeleteResponse`:** `raffle_id`, `tickets_removed` (quantos bilhetes foram apagados).
 
 ### `POST /api/v1/admin/users/{user_id}/adjust-balance`
 

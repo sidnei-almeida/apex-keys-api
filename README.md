@@ -69,6 +69,7 @@ A documentação interativa OpenAPI fica disponível em `/docs` e `/redoc` quand
 - **Consultar rifa (admin)** (`GET /api/v1/admin/raffles/{id}`): dados completos para formulário de edição.
 - **Actualizar rifa (admin)** (`PUT /api/v1/admin/raffles/{id}`): campos opcionais (`RaffleUpdate`); se `total_price` ou `total_tickets` forem enviados, **`ticket_price` é recalculado** com a mesma regra half-up; não altera preço/quantidade em rifas **canceladas**; `total_tickets` não pode ficar abaixo do maior número de bilhete já vendido.
 - **Cancelar rifa** (`POST /api/v1/admin/raffles/{id}/cancel`): só rifas `active`; estorna cada bilhete pago e regista `refund`.
+- **Apagar rifa** (`DELETE /api/v1/admin/raffles/{id}`): remove a rifa e todos os bilhetes na BD. Se existirem bilhetes pagos e a rifa **não** estiver `canceled`, responde **409** — é obrigatório cancelar antes para estornar. O histórico de `transactions` mantém-se.
 - **Ajuste manual de saldo** (`POST /api/v1/admin/users/{user_id}/adjust-balance`): crédito ou débito com descrição opcional e registo `admin_adjustment` (útil para suporte e testes).
 
 ### Metadados de jogos (IGDB)
@@ -252,6 +253,7 @@ O token é emitido em `POST /auth/login` e identifica o usuário pelo claim `sub
 | `PUT` | `/api/v1/admin/raffles/{raffle_id}` | **Admin** | Actualização parcial; recalcula `ticket_price` se `total_price` ou `total_tickets` vierem no corpo |
 | `POST` | `/api/v1/admin/raffles` | **Admin** | Cria rifa (`ticket_price` = divisão de `total_price` / `total_tickets`, **half-up**, 2 casas) |
 | `POST` | `/api/v1/admin/raffles/{raffle_id}/cancel` | **Admin** | Cancela rifa ativa e estorna bilhetes pagos |
+| `DELETE` | `/api/v1/admin/raffles/{raffle_id}` | **Admin** | Apaga rifa e bilhetes; 409 se houver vendas sem cancelamento prévio |
 | `POST` | `/api/v1/admin/users/{user_id}/adjust-balance` | **Admin** | Ajuste manual de saldo (+/−) com descrição opcional; registo `admin_adjustment` |
 | `POST` | `/webhook/mp` | — | Mock Mercado Pago: aprovação de Pix pendente por `gateway_reference` |
 | `POST` | `/igdb/game` | — | Scrape IGDB: corpo JSON `{ "url": "https://www.igdb.com/games/..." }` (sem login) |

@@ -88,6 +88,13 @@ class RaffleCancelResponse(BaseModel):
     refunds_issued: int
 
 
+class RaffleDeleteResponse(BaseModel):
+    """Resposta após remoção permanente da rifa e dos bilhetes associados."""
+
+    raffle_id: UUID
+    tickets_removed: int
+
+
 class AdminWalletAdjust(BaseModel):
     """Ajuste manual de saldo (admin)."""
 
