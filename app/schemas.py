@@ -170,18 +170,12 @@ class IgdbGameUrlRequest(BaseModel):
 
 
 class IgdbGameInfoResponse(BaseModel):
-    """Dados extraídos por scraping da página pública do jogo no IGDB."""
+    """Dados extraídos por scraping da página pública do jogo no IGDB (sem imagens nem vídeo — front preenche manualmente)."""
 
     slug: str
     name: str | None = None
     title: str | None = None
     summary: str | None = None
-    image_url: str | None = None
-    youtube_url: str | None = None
-    youtube_thumbnail_url: str | None = Field(
-        default=None,
-        description="Miniatura do trailer (YouTube), derivada do URL quando o HTML público expõe o vídeo",
-    )
     igdb_url: str
     igdb_game_id: str | None = None
     genres: list[str] = Field(default_factory=list)

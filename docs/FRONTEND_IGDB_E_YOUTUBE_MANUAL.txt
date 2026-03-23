@@ -8,23 +8,17 @@ Documento para implementação no site (Vercel / React / etc.)
 
 O endpoint POST /igdb/game recebe a URL pública de uma ficha de jogo no IGDB
 (ex.: https://www.igdb.com/games/resident-evil-requiem), faz scrape no servidor
-(httpx + fallback cloudscraper) e devolve metadados: título, resumo, capa WebP,
-slug, id numérico IGDB, géneros (quando existem em JSON-LD), etc.
+(httpx + fallback cloudscraper) e devolve metadados: título, resumo, slug,
+id numérico IGDB, géneros (quando existem em JSON-LD), etc.
 
-IMPORTANTE — YouTube / trailer:
-  • Muitas fichas IGDB NÃO incluem o trailer no HTML que o servidor consegue
-    ler. O player carrega o vídeo com JavaScript no browser (às vezes só depois
-    de interagir com "play").
-  • Por isso os campos youtube_url e youtube_thumbnail_url na resposta da API
-    vêm muitas vezes como null — isso é esperado, não é bug.
+O que a API NÃO devolve (frontend preenche manualmente):
+  • image_url — capa do jogo (imagens IGDB são baixa qualidade; usar URL própria).
+  • youtube_url — trailer / link YouTube (colar manualmente).
+  • youtube_thumbnail_url — derivar do video_id ou usar maxresdefault/hqdefault.
 
-Decisão de produto:
-  • A URL do YouTube passa a ser tratada no FRONTEND de forma MANUAL: o
-    utilizador (ou admin) cola o link do trailer (barra de endereço do YouTube
-    ou partilhar).
-  • O scrape IGDB continua a preencher youtube_* quando o HTML público
-    realmente os expuser (casos raros); quando vier null, o front usa só o
-    valor colado manualmente.
+Tempo de resposta: a API espera ~5 segundos antes do primeiro pedido (evitar
+sobrecarga Cloudflare) e repete até 3 tentativas se falhar; pode levar 10–30 s.
+Mostrar loading/spinner no botão enquanto a resposta não chega.
 
 
 2. ENDPOINTS DA API (APEX KEYS) — RESUMO
@@ -77,7 +71,7 @@ Regras da URL (servidor — anti-SSRF):
     -H "Content-Type: application/json" \
     -d '{"url":"https://www.igdb.com/games/resident-evil-requiem"}'
 
-  Resposta 200: JSON com slug, title, image_url, etc.
+  Resposta 200: JSON com slug, title, summary, igdb_url, igdb_game_id, etc.
   Erro: corpo JSON com campo "detail" (string ou lista, conforme FastAPI).
 
 
@@ -98,7 +92,7 @@ Regras da URL (servidor — anti-SSRF):
     // data.detail — mensagem ou array de erros de validação
     throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail));
   }
-  console.log(data.image_url, data.title);
+  console.log(data.title, data.slug);
 
 
 --- JavaScript — axios ---
@@ -128,15 +122,14 @@ Regras da URL (servidor — anti-SSRF):
   name                  string | null
   title                 string | null
   summary               string | null
-  image_url             string | null   — capa (WebP t_cover_big quando possível)
-  youtube_url           string | null   — muitas vezes null (trailer manual no front)
-  youtube_thumbnail_url string | null
   igdb_url              string
   igdb_game_id          string | null
   genres                string[]
   series                string[]
   game_modes            string[]
   player_perspectives   string[]
+
+  (image_url, youtube_url, youtube_thumbnail_url não existem — preencher manualmente no front.)
 
 
 2.4 — Erros HTTP (corpo típico FastAPI)
@@ -158,40 +151,19 @@ Códigos usuais neste endpoint:
 --------------------------------------------------------------------------------
 
 Passo A — Metadados do jogo (automático)
-  1. Utilizador cola a URL da ficha IGDB (como hoje).
+  1. Utilizador cola a URL da ficha IGDB.
   2. O front chama POST /igdb/game com { "url": "<colado>" }.
-  3. Guardar no estado/formulário: title, summary, image_url, slug, igdb_url,
+  3. Guardar no estado/formulário: title, summary, slug, igdb_url,
      igdb_game_id, listas (genres, etc.).
 
-Passo B — Trailer YouTube (manual)
-  1. Mostrar um campo de texto separado, por exemplo:
-     label: "URL do trailer (YouTube)" — opcional ou obrigatório conforme UX.
-  2. O utilizador abre o vídeo no YouTube e cola um destes formatos:
-       • https://www.youtube.com/watch?v=VIDEO_ID
-       • https://youtu.be/VIDEO_ID
-       • https://www.youtube.com/embed/VIDEO_ID
-  3. O front guarda essa string como "trailer_youtube_url" (ou nome que usarem
-     no vosso modelo de dados). NÃO dependam de a API devolver youtube_url.
+Passo B — Imagem de capa (manual)
+  Campo separado para colar a URL da imagem do jogo (fonte preferida pelo front;
+  API não devolve image_url).
 
-Passo C — Imagem de pré-visualização do vídeo (thumbnail)
-  Se a API devolveu youtube_thumbnail_url (raro), podem usar diretamente.
-  Se não, derivem no cliente a partir da URL manual:
-
-  a) Extrair VIDEO_ID (11 caracteres, alfanumérico + _ -):
-     • De watch?v=VIDEO_ID
-     • De youtu.be/VIDEO_ID
-     • De .../embed/VIDEO_ID
-
-  b) URLs de miniatura oficiais (sem API key):
-       https://img.youtube.com/vi/VIDEO_ID/maxresdefault.jpg  — melhor qualidade;
-         alguns vídeos antigos devolvem 404 → usar fallback.
-       https://img.youtube.com/vi/VIDEO_ID/hqdefault.jpg    — mais fiável.
-
-  Exemplo (pseudo-lógica React):
-     <img
-       src={`https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`}
-       onError={(e) => { e.currentTarget.src = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`; }}
-     />
+Passo C — Trailer YouTube (manual)
+  1. Campo para colar URL do trailer: watch?v=, youtu.be/, embed/.
+  2. Para thumbnail do vídeo, derivar no cliente:
+     https://img.youtube.com/vi/{VIDEO_ID}/maxresdefault.jpg (fallback hqdefault.jpg).
 
 Passo D — Persistência
   Ao gravar rifa/produto/jogo no vosso backend:
@@ -251,11 +223,8 @@ Se o fetch falhar só no browser com erro de CORS, é configuração de deploy
 8. O QUE NÃO FAZER
 --------------------------------------------------------------------------------
 
-  • Não assumir que youtube_url da API virá sempre preenchido.
-  • Não bloquear o formulário só porque youtube_url veio null — o utilizador
-    pode colar o link manualmente.
-  • Não confundir image_url (capa do jogo IGDB) com thumbnail do YouTube —
-    são recursos diferentes (capa quadrada vs frame do vídeo).
+  • Não esperar image_url ou youtube_url da API — ambos são manuais.
+  • Não bloquear o formulário à espera de campos que a API não devolve.
 
 
 9. REFERÊNCIAS NO REPOSITÓRIO
