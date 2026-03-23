@@ -1,14 +1,17 @@
 import logging
 from contextlib import asynccontextmanager
 
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.database import close_db, init_db
-from app.routes import admin, auth, checkout, igdb, wallet, webhooks
+from app.routes import admin, auth, checkout, igdb, users, wallet, webhooks
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("apex_keys")
@@ -40,7 +43,13 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
+app.include_router(users.router, prefix="/users", tags=["users"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
+
+uploads_dir = Path("uploads")
+uploads_dir.mkdir(exist_ok=True)
+(uploads_dir / "avatars").mkdir(exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 app.include_router(wallet.router, prefix="/wallet", tags=["wallet"])
 app.include_router(checkout.router, tags=["checkout"])
 app.include_router(webhooks.router, tags=["webhooks"])

@@ -1,9 +1,42 @@
+import re
 from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+
+def _validate_pix_key(v: str | None) -> str | None:
+    """Valida chave PIX BR: CPF (11 dígitos), e-mail, telefone E.164 ou UUID (aleatória)."""
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return None
+    v = v.strip()
+    if not v:
+        return None
+    if len(v) > 140:
+        raise ValueError("Chave PIX deve ter no máximo 140 caracteres")
+    # CPF: 11 dígitos
+    if re.fullmatch(r"^[0-9]{11}$", v):
+        return v
+    # CNPJ: 14 dígitos
+    if re.fullmatch(r"^[0-9]{14}$", v):
+        return v
+    # Telefone E.164: + e 10-15 dígitos
+    if re.fullmatch(r"^\+[1-9][0-9]{9,14}$", v):
+        return v
+    # E-mail (formato básico)
+    if re.fullmatch(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", v):
+        return v
+    # Chave aleatória (UUID)
+    if re.fullmatch(
+        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+        v,
+    ):
+        return v
+    raise ValueError(
+        "Chave PIX inválida. Use CPF (11 dígitos), e-mail, telefone (+55...) ou chave aleatória (UUID)"
+    )
 
 
 class UserSignup(BaseModel):
@@ -13,6 +46,12 @@ class UserSignup(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=128)
     whatsapp: str = Field(..., min_length=10, max_length=20, pattern=r"^\+?[0-9]{10,20}$")
+    pix_key: str | None = Field(None, min_length=1, max_length=140)
+
+    @field_validator("pix_key")
+    @classmethod
+    def validate_pix(cls, v: str | None) -> str | None:
+        return _validate_pix_key(v)
 
 
 class UserLogin(BaseModel):
@@ -34,9 +73,28 @@ class UserPublic(BaseModel):
     full_name: str
     email: EmailStr
     whatsapp: str
+    pix_key: str | None = None
+    avatar_url: str | None = None
     is_admin: bool
     balance: Decimal
     created_at: datetime
+
+
+class UserProfileUpdate(BaseModel):
+    """Atualização parcial do perfil do usuário autenticado."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    full_name: str | None = Field(None, min_length=1, max_length=255)
+    whatsapp: str | None = Field(None, min_length=10, max_length=20, pattern=r"^\+?[0-9]{10,20}$")
+    pix_key: str | None = Field(None, max_length=140)
+
+    @field_validator("pix_key")
+    @classmethod
+    def validate_pix(cls, v: str | None) -> str | None:
+        if v is not None and v.strip():
+            return _validate_pix_key(v)
+        return None
 
 
 class WalletBalanceResponse(BaseModel):

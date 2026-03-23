@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     whatsapp VARCHAR(20) NOT NULL UNIQUE,
+    pix_key VARCHAR(140),
+    avatar_url VARCHAR(1024),
     balance NUMERIC(12, 2) NOT NULL DEFAULT 0,
     is_admin BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW()

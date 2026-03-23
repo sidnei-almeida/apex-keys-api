@@ -29,6 +29,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     whatsapp: Mapped[str] = mapped_column(String(20), unique=True)
+    pix_key: Mapped[str | None] = mapped_column(String(140), nullable=True)
+    avatar_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

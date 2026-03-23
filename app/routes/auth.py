@@ -13,8 +13,8 @@ from app.security import create_access_token, get_current_user_id, hash_password
 router = APIRouter()
 
 
-@router.post("/signup", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
-async def signup(body: UserSignup, session: AsyncSession = Depends(get_session)) -> UserPublic:
+@router.post("/signup", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+async def signup(body: UserSignup, session: AsyncSession = Depends(get_session)) -> TokenResponse:
     dup = await session.execute(
         select(User.id)
         .where(or_(User.email == body.email, User.whatsapp == body.whatsapp))
@@ -30,13 +30,14 @@ async def signup(body: UserSignup, session: AsyncSession = Depends(get_session))
         email=body.email,
         password_hash=hash_password(body.password),
         whatsapp=body.whatsapp,
+        pix_key=body.pix_key,
         balance=Decimal("0.00"),
         is_admin=False,
     )
     session.add(user)
     await session.flush()
-    await session.refresh(user)
-    return UserPublic.model_validate(user)
+    token = create_access_token(str(user.id))
+    return TokenResponse(access_token=token)
 
 
 @router.post("/login", response_model=TokenResponse)
