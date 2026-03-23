@@ -65,6 +65,8 @@ Em **produção**, substitua pelo domínio real da API (variável de ambiente no
 | `POST` | `/api/v1/admin/raffles` | **Admin** | Cria rifa (preço por bilhete calculado no servidor) |
 | `POST` | `/api/v1/admin/raffles/{raffle_id}/cancel` | **Admin** | Cancela rifa ativa e estorna bilhetes pagos |
 | `DELETE` | `/api/v1/admin/raffles/{raffle_id}` | **Admin** | Apaga rifa e bilhetes na BD; **409** se existirem bilhetes pagos e a rifa não estiver `canceled` (cancelar antes) |
+| `PATCH` | `/api/v1/admin/raffles/{raffle_id}/image` | **Admin** | Actualiza só `image_url` (URL da capa); corpo: `{ "image_url": "..." }` |
+| `PATCH` | `/api/v1/admin/raffles/{raffle_id}/video` | **Admin** | Actualiza só `video_id`; corpo: `{ "youtube_url": "..." }` — aceita URL ou ID, grava o ID |
 | `POST` | `/api/v1/admin/users/{user_id}/adjust-balance` | **Admin** | Crédito ou débito manual de saldo |
 | `POST` | `/webhook/mp` | — | Mock de webhook (normalmente **backend**; ver nota abaixo) |
 | `POST` | `/igdb/game` | — | Metadados de jogo a partir da URL pública do IGDB |
@@ -220,6 +222,22 @@ Remove a rifa e **todos** os registos de bilhetes (`tickets`) dessa rifa.
 **Regra:** se existirem bilhetes com `status` pago (`paid`) e a rifa **não** estiver `canceled`, a API responde **409** — é necessário chamar antes `POST .../cancel` para estornar compradores. Rifas sem vendas ou já `canceled` podem ser apagadas.
 
 **Resposta `200` — `RaffleDeleteResponse`:** `raffle_id`, `tickets_removed` (quantos bilhetes foram apagados).
+
+### `PATCH /api/v1/admin/raffles/{raffle_id}/image`
+
+Actualiza só o campo `image_url` da rifa (URL da capa, ex.: 1080p).
+
+**Corpo (`RaffleImagePatch`):** `{ "image_url": "https://..." }` ou `{ "image_url": null }` para limpar.
+
+**Resposta `200`:** `RafflePublic`.
+
+### `PATCH /api/v1/admin/raffles/{raffle_id}/video`
+
+Actualiza só o campo `video_id` da rifa. Aceita URL completa do YouTube (watch?v=, youtu.be/, embed/) ou só o ID; grava o video_id (11 chars) na BD.
+
+**Corpo (`RaffleVideoPatch`):** `{ "youtube_url": "https://www.youtube.com/watch?v=xxx" }` ou `{ "youtube_url": null }` para limpar.
+
+**Resposta `200`:** `RafflePublic`. **Erro `400`:** URL/ID do YouTube inválido.
 
 ### `POST /api/v1/admin/users/{user_id}/adjust-balance`
 

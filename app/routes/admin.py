@@ -1,3 +1,4 @@
+import re
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -13,12 +14,29 @@ from app.schemas import (
     AdminWalletAdjustResponse,
     RaffleCancelResponse,
     RaffleDeleteResponse,
+    RaffleImagePatch,
     RafflePublic,
     RaffleUpdate,
+    RaffleVideoPatch,
 )
 from app.security import get_current_admin
 
 router = APIRouter()
+
+_YOUTUBE_ID_RE = re.compile(r"(?:[?&]v=|/embed/|youtu\.be/)([a-zA-Z0-9_-]{11})\b")
+
+
+def _youtube_id_from_url(url: str | None) -> str | None:
+    """Extrai o video_id (11 chars) de URL YouTube ou devolve o próprio valor se já for ID."""
+    if not url or not url.strip():
+        return None
+    u = url.strip()
+    m = _YOUTUBE_ID_RE.search(u)
+    if m:
+        return m.group(1)
+    if re.fullmatch(r"[a-zA-Z0-9_-]{11}", u):
+        return u
+    return None
 
 
 @router.post("/users/{user_id}/adjust-balance", response_model=AdminWalletAdjustResponse)
@@ -145,6 +163,58 @@ async def update_raffle(
         if key in data:
             setattr(raffle, key, data[key])
 
+    await session.flush()
+    await session.refresh(raffle)
+    return RafflePublic.model_validate(raffle)
+
+
+@router.patch("/raffles/{raffle_id}/image", response_model=RafflePublic)
+async def patch_raffle_image(
+    raffle_id: UUID,
+    body: RaffleImagePatch,
+    _admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_session),
+) -> RafflePublic:
+    """Atualiza só o campo image_url da rifa (URL da capa em 1080p)."""
+    r_result = await session.execute(
+        select(Raffle).where(Raffle.id == raffle_id).with_for_update(),
+    )
+    raffle = r_result.scalar_one_or_none()
+    if raffle is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sorteio não encontrado")
+    raffle.image_url = body.image_url
+    await session.flush()
+    await session.refresh(raffle)
+    return RafflePublic.model_validate(raffle)
+
+
+@router.patch("/raffles/{raffle_id}/video", response_model=RafflePublic)
+async def patch_raffle_video(
+    raffle_id: UUID,
+    body: RaffleVideoPatch,
+    _admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_session),
+) -> RafflePublic:
+    """
+    Atualiza só o campo video_id da rifa.
+    Aceita URL completa (watch?v=, youtu.be/, embed/) ou só o ID; grava o video_id.
+    """
+    r_result = await session.execute(
+        select(Raffle).where(Raffle.id == raffle_id).with_for_update(),
+    )
+    raffle = r_result.scalar_one_or_none()
+    if raffle is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sorteio não encontrado")
+    if body.youtube_url is None:
+        raffle.video_id = None
+    else:
+        vid = _youtube_id_from_url(body.youtube_url)
+        if vid is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="URL ou ID do YouTube inválido. Use watch?v=, youtu.be/ ou embed/.",
+            )
+        raffle.video_id = vid
     await session.flush()
     await session.refresh(raffle)
     return RafflePublic.model_validate(raffle)

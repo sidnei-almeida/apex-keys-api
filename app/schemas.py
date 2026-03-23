@@ -131,6 +131,22 @@ class RaffleUpdate(BaseModel):
     total_tickets: int | None = Field(default=None, gt=0)
 
 
+class RaffleImagePatch(BaseModel):
+    """Atualiza só a URL da imagem de capa (ex.: 1080p)."""
+
+    image_url: str | None = Field(default=None, max_length=1024, description="URL da imagem; null para limpar")
+
+
+class RaffleVideoPatch(BaseModel):
+    """Atualiza só o vídeo YouTube. Aceita URL completa ou ID; grava o ID no campo video_id."""
+
+    youtube_url: str | None = Field(
+        default=None,
+        max_length=512,
+        description="URL (watch?v=, youtu.be/, embed/) ou só o video_id; null para limpar",
+    )
+
+
 class PixDepositCreate(BaseModel):
     """Cria transação pendente para testes do webhook (valor em créditos)."""
 
