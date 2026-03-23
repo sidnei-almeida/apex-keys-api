@@ -146,6 +146,12 @@ class RaffleListOut(RafflePublic):
     sold: int = 0
 
 
+class RaffleDetailOut(RaffleListOut):
+    """RaffleListOut + lista de números vendidos (para página de participação)."""
+
+    sold_numbers: list[int] = Field(default_factory=list)
+
+
 class MyTicketOut(BaseModel):
     """Bilhete do usuário com dados da rifa."""
 

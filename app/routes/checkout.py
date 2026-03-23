@@ -7,7 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_session
 from app.models import Raffle, RaffleStatus, Ticket, Transaction, User
-from app.schemas import RaffleListOut, RafflePublic, TicketPurchaseRequest, TicketPurchaseResponse
+from app.schemas import (
+    RaffleDetailOut,
+    RaffleListOut,
+    RafflePublic,
+    TicketPurchaseRequest,
+    TicketPurchaseResponse,
+)
 from app.security import get_current_user_id
 
 router = APIRouter()
@@ -51,6 +57,33 @@ async def list_raffles(
         data = RafflePublic.model_validate(r).model_dump()
         out.append(RaffleListOut(**data, sold=sold))
     return out
+
+
+@router.get("/raffles/{raffle_id}", response_model=RaffleDetailOut)
+async def get_raffle_detail(
+    raffle_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> RaffleDetailOut:
+    """Retorna detalhes da rifa (público), incluindo lista de números vendidos."""
+    r_result = await session.execute(select(Raffle).where(Raffle.id == raffle_id))
+    raffle = r_result.scalar_one_or_none()
+    if raffle is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sorteio não encontrado")
+
+    sold_result = await session.execute(
+        select(Ticket.ticket_number).where(
+            Ticket.raffle_id == raffle_id,
+            Ticket.status == "paid",
+        )
+    )
+    sold_numbers = [int(row[0]) for row in sold_result.fetchall()]
+
+    data = RafflePublic.model_validate(raffle).model_dump()
+    return RaffleDetailOut(
+        **data,
+        sold=len(sold_numbers),
+        sold_numbers=sold_numbers,
+    )
 
 
 @router.post("/buy-ticket", response_model=TicketPurchaseResponse)
