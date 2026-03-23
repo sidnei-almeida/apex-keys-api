@@ -140,6 +140,18 @@ class RafflePublic(BaseModel):
     created_at: datetime
 
 
+class MyTicketOut(BaseModel):
+    """Bilhete do usuário com dados da rifa."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    ticket_id: UUID
+    raffle_id: UUID
+    ticket_number: int
+    raffle: RafflePublic
+    created_at: datetime
+
+
 class RaffleCancelResponse(BaseModel):
     raffle_id: UUID
     status: Literal["canceled"]
