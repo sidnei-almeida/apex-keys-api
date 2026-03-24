@@ -1,14 +1,15 @@
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_session
-from app.models import User
-from app.schemas import UserProfileUpdate, UserPublic
+from app.models import Notification, Raffle, RaffleStatus, Ticket, User
+from app.schemas import MyTicketOut, NotificationOut, RafflePublic, UserProfileUpdate, UserPublic
 from app.security import get_current_user_id
 
 router = APIRouter()
@@ -27,6 +28,123 @@ def _upload_dir() -> Path:
 def _avatar_url(filename: str) -> str:
     """Retorna o path público do avatar (ex.: /uploads/avatars/xxx.webp)."""
     return f"/uploads/avatars/{filename}"
+
+
+@router.get("/me/tickets", response_model=list[MyTicketOut])
+async def list_my_tickets(
+    status_filter: str | None = Query(
+        None,
+        alias="status",
+        description="Filtrar por status da rifa: active, sold_out, finished, canceled",
+    ),
+    user_id: UUID = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_session),
+) -> list[MyTicketOut]:
+    """Lista bilhetes do usuário com dados da rifa. Use status=active para rifas ativas."""
+    query = (
+        select(Ticket, Raffle)
+        .join(Raffle, Ticket.raffle_id == Raffle.id)
+        .where(Ticket.user_id == user_id, Ticket.status == "paid")
+        .order_by(Ticket.created_at.desc())
+    )
+    if status_filter:
+        s = status_filter.lower().strip()
+        if s in {st.value for st in RaffleStatus}:
+            query = query.where(Raffle.status == s)
+    result = await session.execute(query)
+    rows = result.all()
+    return [
+        MyTicketOut(
+            ticket_id=t.id,
+            raffle_id=t.raffle_id,
+            ticket_number=t.ticket_number,
+            raffle=RafflePublic.model_validate(r),
+            created_at=t.created_at,
+        )
+        for t, r in rows
+    ]
+
+
+@router.get("/me/notifications", response_model=list[NotificationOut])
+async def list_my_notifications(
+    unread_only: bool = Query(False, alias="unread_only"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    user_id: UUID = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_session),
+) -> list[NotificationOut]:
+    """Lista notificações do usuário, ordenadas por mais recente."""
+    query = (
+        select(Notification)
+        .where(Notification.user_id == user_id)
+        .order_by(Notification.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    if unread_only:
+        query = query.where(Notification.read_at.is_(None))
+    result = await session.execute(query)
+    notifications = result.scalars().all()
+    return [NotificationOut.model_validate(n) for n in notifications]
+
+
+@router.get("/me/notifications/unread-count")
+async def get_unread_notifications_count(
+    user_id: UUID = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, int]:
+    """Retorna a quantidade de notificações não lidas."""
+    result = await session.execute(
+        select(func.count()).select_from(Notification).where(
+            Notification.user_id == user_id,
+            Notification.read_at.is_(None),
+        )
+    )
+    count = int(result.scalar() or 0)
+    return {"unread_count": count}
+
+
+@router.patch("/me/notifications/{notification_id}/read", response_model=NotificationOut)
+async def mark_notification_read(
+    notification_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_session),
+) -> NotificationOut:
+    """Marca uma notificação como lida."""
+    result = await session.execute(
+        select(Notification).where(
+            Notification.id == notification_id,
+            Notification.user_id == user_id,
+        )
+    )
+    notification = result.scalar_one_or_none()
+    if notification is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notificação não encontrada")
+    if notification.read_at is None:
+        notification.read_at = datetime.now(timezone.utc)
+        await session.flush()
+        await session.refresh(notification)
+    return NotificationOut.model_validate(notification)
+
+
+@router.post("/me/notifications/read-all")
+async def mark_all_notifications_read(
+    user_id: UUID = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, str]:
+    """Marca todas as notificações do usuário como lidas."""
+    result = await session.execute(
+        select(Notification).where(
+            Notification.user_id == user_id,
+            Notification.read_at.is_(None),
+        )
+    )
+    notifications = result.scalars().all()
+    now = datetime.now(timezone.utc)
+    for n in notifications:
+        n.read_at = now
+    await session.flush()
+    return {"message": "Todas as notificações foram marcadas como lidas"}
 
 
 @router.patch("/me", response_model=UserPublic)
