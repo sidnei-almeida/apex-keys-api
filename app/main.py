@@ -69,19 +69,37 @@ async def validation_exception_handler(
     )
 
 
+def _cors_headers_for_request(request: Request) -> dict[str, str]:
+    """Adiciona CORS ao handler de exceção para que 5xx tenham header (browser precisa para ler o body)."""
+    origin = request.headers.get("origin")
+    if not origin:
+        return {}
+    allowed = settings.cors_origin_list()
+    if not allowed:
+        return {}
+    if "*" in allowed:
+        return {"Access-Control-Allow-Origin": "*"}
+    if origin in allowed:
+        return {"Access-Control-Allow-Origin": origin}
+    return {}
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    cors_h = _cors_headers_for_request(request)
     if isinstance(exc, HTTPException):
-        headers = exc.headers
+        headers = dict(exc.headers) if exc.headers else {}
+        headers.update(cors_h)
         return JSONResponse(
             status_code=exc.status_code,
             content={"detail": exc.detail},
-            headers=dict(headers) if headers else None,
+            headers=headers or None,
         )
     logger.exception("Erro não tratado: %s", exc)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"detail": "Erro interno. Tente novamente mais tarde."},
+        headers=cors_h or None,
     )
 
 
