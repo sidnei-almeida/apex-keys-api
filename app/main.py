@@ -45,6 +45,8 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(users.router, prefix="/users", tags=["users"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["admin"])
+# Alias para compatibilidade com frontend que ainda chama /admin/*
+app.include_router(admin.router, prefix="/admin", tags=["admin"])
 
 uploads_dir = Path("uploads")
 uploads_dir.mkdir(exist_ok=True)
