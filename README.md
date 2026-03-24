@@ -248,7 +248,7 @@ O token é emitido em `POST /auth/login` e identifica o usuário pelo claim `sub
 | `GET` | `/auth/me` | Usuário | Perfil (`full_name`, `balance`, `is_admin`, …) |
 | `GET` | `/wallet/balance` | Usuário | Saldo (`balance`) |
 | `GET` | `/wallet/transactions` | Usuário | Até 200 lançamentos recentes |
-| `POST` | `/wallet/mock-pix-intent` | Usuário | Cria `pix_deposit` **pending** + payload mock (desenvolvimento) |
+| `POST` | `/wallet/mock-pix-intent` | Usuário | Cria `pix_deposit` pending; com `MERCADO_PAGO_ACCESS_TOKEN`, cobrança Pix real (MP); senão mock |
 | `GET` | `/raffles` | — | Lista rifas; query opcional `?status=active\|sold_out\|finished\|canceled` |
 | `POST` | `/buy-ticket` | Usuário | Compra atômica de um número em rifa `active` |
 | `GET` | `/api/v1/admin/raffles/{raffle_id}` | **Admin** | Detalhe da rifa (edição) |
@@ -259,7 +259,8 @@ O token é emitido em `POST /auth/login` e identifica o usuário pelo claim `sub
 | `PATCH` | `/api/v1/admin/raffles/{raffle_id}/image` | **Admin** | Actualiza só `image_url`; corpo `{ "image_url": "..." }` |
 | `PATCH` | `/api/v1/admin/raffles/{raffle_id}/video` | **Admin** | Actualiza só `video_id`; corpo `{ "youtube_url": "..." }` |
 | `POST` | `/api/v1/admin/users/{user_id}/adjust-balance` | **Admin** | Ajuste manual de saldo (+/−) com descrição opcional; registo `admin_adjustment` |
-| `POST` | `/webhook/mp` | — | Mock Mercado Pago: aprovação de Pix pendente por `gateway_reference` |
+| `POST` | `/webhook/mp` | — | Mock/teste: aprova Pix por `gateway_reference` |
+| `POST` / `GET` | `/webhook/mercadopago` | — | Notificações reais do Mercado Pago (IPN) |
 | `POST` | `/igdb/game` | — | Scrape IGDB: corpo JSON `{ "url": "https://www.igdb.com/games/..." }` (sem login) |
 | `GET` | `/health` | — | Status do serviço |
 
@@ -410,6 +411,7 @@ uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
 | `JWT_ALGORITHM` | Não | Padrão: `HS256` |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Não | Padrão: `30` |
 | `CORS_ORIGINS` | Não | Origens permitidas, separadas por vírgula |
+| `MERCADO_PAGO_ACCESS_TOKEN` | Não | Token API MP; sem ele o fluxo Pix continua mock. Aceita `MERCADO_PAGO_ACESS_TOKEN` (typo) |
 
 \*Valores padrão em `app/config.py` existem apenas para desenvolvimento local; **produção deve sempre sobrescrever**.
 

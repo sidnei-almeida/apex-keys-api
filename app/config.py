@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -41,6 +41,14 @@ class Settings(BaseSettings):
     frontend_url: str = Field(
         default="",
         description="URL base do frontend para links em emails (ex: https://apexkeys.com)",
+    )
+    mercado_pago_access_token: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "MERCADO_PAGO_ACCESS_TOKEN",
+            "MERCADO_PAGO_ACESS_TOKEN",
+        ),
+        description="Access token da API Mercado Pago (teste ou produção). Opcional: sem token usa mock Pix.",
     )
 
     def cors_origin_list(self) -> list[str]:
