@@ -18,6 +18,7 @@ from app.mercado_pago_service import MercadoPagoApiError, create_pix_payment, ex
 from app.models import Raffle, RaffleStatus, Ticket, Transaction, User
 from app.reservation_service import (
     cancel_hold_reservation,
+    expire_stale_pending_reservations,
     finalize_hold_as_paid,
     load_pending_tickets_for_hold,
 )
@@ -47,6 +48,8 @@ async def reserve_raffle_tickets(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Lista de números contém duplicados",
         )
+
+    await expire_stale_pending_reservations(session, raffle_id=body.raffle_id)
 
     r_result = await session.execute(
         select(Raffle).where(Raffle.id == body.raffle_id).with_for_update(),
@@ -360,21 +363,24 @@ async def release_reservation_self(
     user_id: UUID = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Libera números se ainda estiverem pending (ex.: desistiu antes do Pix)."""
+    """
+    Liberta números pending deste utilizador (desistência).
+    Remove também cobrança Pix local pendente; o QR deixa de corresponder a uma reserva ativa.
+    """
     pending = await load_pending_tickets_for_hold(session, hold_id, user_id=user_id)
     if not pending:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Nada para liberar",
         )
-    tx_row = await _pending_raffle_tx(session, hold_id)
-    if tx_row is not None and tx_row.status == "pending":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Cancele aguardando expiração do Pix ou contate o suporte",
-        )
     n = await cancel_hold_reservation(session, hold_id)
     await session.commit()
+    logger.info(
+        "[release] user=%s hold=%s released_tickets=%s",
+        user_id,
+        hold_id,
+        n,
+    )
     return {"released": n}
 
 

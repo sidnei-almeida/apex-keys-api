@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_session
 from app.models import Raffle, RaffleStatus, Ticket, Transaction, User
+from app.reservation_service import expire_stale_pending_reservations
 from app.schemas import (
     RaffleDetailOut,
     RaffleListOut,
@@ -76,6 +77,8 @@ async def get_raffle_detail(
     raffle = r_result.scalar_one_or_none()
     if raffle is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sorteio não encontrado")
+
+    await expire_stale_pending_reservations(session, raffle_id=raffle_id)
 
     sold_result = await session.execute(
         select(Ticket.ticket_number).where(

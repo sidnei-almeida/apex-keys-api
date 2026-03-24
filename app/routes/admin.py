@@ -11,7 +11,12 @@ from app.deps import get_session
 from app.email_service import send_raffle_canceled_refund_email
 from app.models import FeaturedTier, Notification, Raffle, RaffleStatus, Ticket, Transaction, User
 from app.pricing import tactical_ticket_price
-from app.reservation_service import cancel_hold_reservation, finalize_hold_as_paid, load_pending_tickets_for_hold
+from app.reservation_service import (
+    cancel_hold_reservation,
+    expire_stale_pending_reservations,
+    finalize_hold_as_paid,
+    load_pending_tickets_for_hold,
+)
 from app.schemas import (
     AdminRaffleCreate,
     AdminReservationRowOut,
@@ -391,6 +396,7 @@ async def admin_list_pending_reservations(
     session: AsyncSession = Depends(get_session),
 ) -> list[AdminReservationRowOut]:
     """Reservas com bilhetes pending_payment (Transações & Controle no QG)."""
+    await expire_stale_pending_reservations(session)
     tr = await session.execute(
         select(Ticket, User, Raffle)
         .join(User, Ticket.user_id == User.id)

@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Raffle, RaffleStatus, Ticket, Transaction, User
+
+# Reservas pending_payment sem pagamento são libertadas após este tempo (minutos).
+RESERVATION_TTL_MINUTES = 15
 
 
 async def load_pending_tickets_for_hold(
@@ -103,3 +107,33 @@ async def cancel_hold_reservation(session: AsyncSession, hold_id: uuid.UUID) -> 
         ),
     )
     return n
+
+
+async def expire_stale_pending_reservations(
+    session: AsyncSession,
+    *,
+    raffle_id: uuid.UUID | None = None,
+) -> int:
+    """
+    Remove bilhetes pending_payment mais antigos que RESERVATION_TTL_MINUTES
+    e a transação raffle_payment pendente do mesmo hold.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=RESERVATION_TTL_MINUTES)
+    q = (
+        select(Ticket.payment_hold_id)
+        .where(
+            Ticket.status == "pending_payment",
+            Ticket.payment_hold_id.isnot(None),
+            Ticket.created_at < cutoff,
+        )
+        .distinct()
+    )
+    if raffle_id is not None:
+        q = q.where(Ticket.raffle_id == raffle_id)
+    r = await session.execute(q)
+    hold_ids = [row[0] for row in r.fetchall()]
+    total = 0
+    for hid in hold_ids:
+        if hid is not None:
+            total += await cancel_hold_reservation(session, hid)
+    return total
