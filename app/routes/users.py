@@ -2,13 +2,13 @@ import os
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_session
-from app.models import User
-from app.schemas import UserProfileUpdate, UserPublic
+from app.models import Raffle, RaffleStatus, Ticket, User
+from app.schemas import MyTicketOut, RafflePublic, UserProfileUpdate, UserPublic
 from app.security import get_current_user_id
 
 router = APIRouter()
@@ -27,6 +27,41 @@ def _upload_dir() -> Path:
 def _avatar_url(filename: str) -> str:
     """Retorna o path público do avatar (ex.: /uploads/avatars/xxx.webp)."""
     return f"/uploads/avatars/{filename}"
+
+
+@router.get("/me/tickets", response_model=list[MyTicketOut])
+async def list_my_tickets(
+    status_filter: str | None = Query(
+        None,
+        alias="status",
+        description="Filtrar por status da rifa: active, sold_out, finished, canceled",
+    ),
+    user_id: UUID = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_session),
+) -> list[MyTicketOut]:
+    """Lista bilhetes do usuário com dados da rifa. Use status=active para rifas ativas."""
+    query = (
+        select(Ticket, Raffle)
+        .join(Raffle, Ticket.raffle_id == Raffle.id)
+        .where(Ticket.user_id == user_id, Ticket.status == "paid")
+        .order_by(Ticket.created_at.desc())
+    )
+    if status_filter:
+        s = status_filter.lower().strip()
+        if s in {st.value for st in RaffleStatus}:
+            query = query.where(Raffle.status == s)
+    result = await session.execute(query)
+    rows = result.all()
+    return [
+        MyTicketOut(
+            ticket_id=t.id,
+            raffle_id=t.raffle_id,
+            ticket_number=t.ticket_number,
+            raffle=RafflePublic.model_validate(r),
+            created_at=t.created_at,
+        )
+        for t, r in rows
+    ]
 
 
 @router.patch("/me", response_model=UserPublic)

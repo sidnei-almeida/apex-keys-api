@@ -140,6 +140,30 @@ class RafflePublic(BaseModel):
     created_at: datetime
 
 
+class RaffleListOut(RafflePublic):
+    """RafflePublic + quantidade de bilhetes vendidos (para listagem pública)."""
+
+    sold: int = 0
+
+
+class RaffleDetailOut(RaffleListOut):
+    """RaffleListOut + lista de números vendidos (para página de participação)."""
+
+    sold_numbers: list[int] = Field(default_factory=list)
+
+
+class MyTicketOut(BaseModel):
+    """Bilhete do usuário com dados da rifa."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    ticket_id: UUID
+    raffle_id: UUID
+    ticket_number: int
+    raffle: RafflePublic
+    created_at: datetime
+
+
 class RaffleCancelResponse(BaseModel):
     raffle_id: UUID
     status: Literal["canceled"]
