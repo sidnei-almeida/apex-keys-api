@@ -11,8 +11,10 @@ from app.deps import get_session
 from app.email_service import send_raffle_canceled_refund_email
 from app.models import FeaturedTier, Notification, Raffle, RaffleStatus, Ticket, Transaction, User
 from app.pricing import tactical_ticket_price
+from app.reservation_service import cancel_hold_reservation, finalize_hold_as_paid, load_pending_tickets_for_hold
 from app.schemas import (
     AdminRaffleCreate,
+    AdminReservationRowOut,
     AdminWalletAdjust,
     AdminWalletAdjustResponse,
     FeaturedTierPatch,
@@ -381,3 +383,107 @@ async def delete_raffle(
     await session.flush()
 
     return RaffleDeleteResponse(raffle_id=raffle_id, tickets_removed=tickets_removed)
+
+
+@router.get("/reservations", response_model=list[AdminReservationRowOut])
+async def admin_list_pending_reservations(
+    _admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_session),
+) -> list[AdminReservationRowOut]:
+    """Reservas com bilhetes pending_payment (Transações & Controle no QG)."""
+    tr = await session.execute(
+        select(Ticket, User, Raffle)
+        .join(User, Ticket.user_id == User.id)
+        .join(Raffle, Ticket.raffle_id == Raffle.id)
+        .where(
+            Ticket.status == "pending_payment",
+            Ticket.payment_hold_id.isnot(None),
+        )
+        .order_by(Ticket.created_at.desc()),
+    )
+    rows = tr.all()
+    by_hold: dict[UUID, list[tuple[Ticket, User, Raffle]]] = defaultdict(list)
+    for t, u, r in rows:
+        assert t.payment_hold_id is not None
+        by_hold[t.payment_hold_id].append((t, u, r))
+
+    out: list[AdminReservationRowOut] = []
+    for hold_id, items in by_hold.items():
+        t0, user, raffle = items[0]
+        nums = sorted(x[0].ticket_number for x in items)
+        total = raffle.ticket_price * len(nums)
+        tx_r = await session.execute(
+            select(Transaction).where(
+                Transaction.payment_hold_id == hold_id,
+                Transaction.type == "raffle_payment",
+            ),
+        )
+        tx = tx_r.scalar_one_or_none()
+        if tx is None:
+            channel = "wallet_pending"
+        elif tx.status == "pending":
+            channel = "pix"
+        else:
+            channel = "none"
+        created_at = min(x[0].created_at for x in items)
+        out.append(
+            AdminReservationRowOut(
+                payment_hold_id=hold_id,
+                user_id=user.id,
+                user_email=user.email,
+                user_name=user.full_name,
+                raffle_id=raffle.id,
+                raffle_title=raffle.title,
+                ticket_numbers=nums,
+                total_amount=total,
+                created_at=created_at,
+                payment_channel=channel,
+                transaction_id=tx.id if tx else None,
+                transaction_status=tx.status if tx else None,
+                gateway_reference=tx.gateway_reference if tx else None,
+            ),
+        )
+    out.sort(key=lambda x: x.created_at, reverse=True)
+    return out
+
+
+@router.post("/reservations/{hold_id}/confirm")
+async def admin_confirm_reservation(
+    hold_id: UUID,
+    _admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Aprova manualmente: marca bilhetes como pagos (Pix presencial / exceção)."""
+    pending = await load_pending_tickets_for_hold(session, hold_id)
+    if not pending:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Nenhuma reserva pendente para este hold",
+        )
+    tx_r = await session.execute(
+        select(Transaction).where(
+            Transaction.payment_hold_id == hold_id,
+            Transaction.type == "raffle_payment",
+            Transaction.status == "pending",
+        ),
+    )
+    tx = tx_r.scalar_one_or_none()
+    await finalize_hold_as_paid(
+        session,
+        hold_id,
+        mark_raffle_payment_tx_id=tx.id if tx is not None else None,
+    )
+    await session.commit()
+    return {"ok": True, "payment_hold_id": str(hold_id)}
+
+
+@router.post("/reservations/{hold_id}/cancel")
+async def admin_cancel_reservation(
+    hold_id: UUID,
+    _admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Liberta números e remove cobrança Pix pendente associada."""
+    n = await cancel_hold_reservation(session, hold_id)
+    await session.commit()
+    return {"released_tickets": n, "payment_hold_id": str(hold_id)}

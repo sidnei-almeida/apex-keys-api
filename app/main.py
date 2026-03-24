@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.database import close_db, init_db
-from app.routes import admin, auth, checkout, igdb, users, wallet, webhooks
+from app.routes import admin, auth, checkout, igdb, raffle_reservations, users, wallet, webhooks
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("apex_keys")
@@ -54,6 +54,7 @@ uploads_dir.mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 app.include_router(wallet.router, prefix="/wallet", tags=["wallet"])
 app.include_router(checkout.router, tags=["checkout"])
+app.include_router(raffle_reservations.router, tags=["checkout"])
 app.include_router(webhooks.router, tags=["webhooks"])
 app.include_router(igdb.router, prefix="/igdb", tags=["igdb"])
 

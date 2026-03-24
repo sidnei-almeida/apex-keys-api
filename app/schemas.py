@@ -106,10 +106,17 @@ class TransactionOut(BaseModel):
 
     id: UUID
     amount: Decimal
-    type: Literal["pix_deposit", "purchase", "refund", "admin_adjustment"]
+    type: Literal[
+        "pix_deposit",
+        "purchase",
+        "refund",
+        "admin_adjustment",
+        "raffle_payment",
+    ]
     status: Literal["pending", "completed", "failed"]
     gateway_reference: str | None
     description: str | None
+    payment_hold_id: UUID | None = None
     created_at: datetime
 
 
@@ -137,6 +144,52 @@ class TicketPurchaseResponse(BaseModel):
     new_balance: Decimal
 
 
+class ReserveRaffleTicketsBody(BaseModel):
+    raffle_id: UUID
+    ticket_numbers: list[int] = Field(..., min_length=1, max_length=50)
+
+
+class ReserveRaffleTicketsResponse(BaseModel):
+    payment_hold_id: UUID
+    raffle_id: UUID
+    ticket_numbers: list[int]
+    total_amount: Decimal
+
+
+class CompleteReservationWalletBody(BaseModel):
+    payment_hold_id: UUID
+
+
+class ReservationPixIntentBody(BaseModel):
+    payment_hold_id: UUID
+    gateway_reference: str = Field(..., min_length=8, max_length=255)
+
+
+class ReservationStatusOut(BaseModel):
+    payment_hold_id: UUID
+    state: Literal["pending_payment", "paid", "released", "unknown"]
+    raffle_id: UUID | None = None
+    ticket_numbers: list[int] = Field(default_factory=list)
+    transaction_status: Literal["pending", "completed", "failed"] | None = None
+    gateway_reference: str | None = None
+
+
+class AdminReservationRowOut(BaseModel):
+    payment_hold_id: UUID
+    user_id: UUID
+    user_email: str
+    user_name: str
+    raffle_id: UUID
+    raffle_title: str
+    ticket_numbers: list[int]
+    total_amount: Decimal
+    created_at: datetime
+    payment_channel: Literal["pix", "wallet_pending", "none"]
+    transaction_id: UUID | None = None
+    transaction_status: Literal["pending", "completed", "failed"] | None = None
+    gateway_reference: str | None = None
+
+
 FeaturedTierType = Literal["featured", "carousel", "none"]
 
 
@@ -156,15 +209,23 @@ class RafflePublic(BaseModel):
 
 
 class RaffleListOut(RafflePublic):
-    """RafflePublic + quantidade de bilhetes vendidos (para listagem pública)."""
+    """RafflePublic + vendidos e reservas ativas (pending_payment)."""
 
     sold: int = 0
+    held: int = Field(
+        0,
+        description="Bilhetes reservados aguardando pagamento (números bloqueados na grade)",
+    )
 
 
 class RaffleDetailOut(RaffleListOut):
-    """RaffleListOut + lista de números vendidos (para página de participação)."""
+    """RaffleListOut + números vendidos e reservados (aguardando pagamento)."""
 
     sold_numbers: list[int] = Field(default_factory=list)
+    held_numbers: list[int] = Field(
+        default_factory=list,
+        description="Números com reserva ativa (pending_payment), indisponíveis na grade",
+    )
 
 
 class MyTicketOut(BaseModel):
@@ -175,30 +236,7 @@ class MyTicketOut(BaseModel):
     ticket_id: UUID
     raffle_id: UUID
     ticket_number: int
-    raffle: RafflePublic
-    created_at: datetime
-
-
-class RaffleListOut(RafflePublic):
-    """RafflePublic + quantidade de bilhetes vendidos (para listagem pública)."""
-
-    sold: int = 0
-
-
-class RaffleDetailOut(RaffleListOut):
-    """RaffleListOut + lista de números vendidos (para página de participação)."""
-
-    sold_numbers: list[int] = Field(default_factory=list)
-
-
-class MyTicketOut(BaseModel):
-    """Bilhete do usuário com dados da rifa."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    ticket_id: UUID
-    raffle_id: UUID
-    ticket_number: int
+    status: Literal["paid", "pending_payment"] = "paid"
     raffle: RafflePublic
     created_at: datetime
 

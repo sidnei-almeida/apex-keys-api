@@ -11,6 +11,7 @@ from app.deps import get_session
 from app.mercado_pago_service import MercadoPagoApiError, get_payment
 from app.models import Transaction, User
 from app.mp_logging import webhook_incoming_summary
+from app.reservation_service import delete_pending_tickets_for_hold, finalize_hold_as_paid
 from app.schemas import MercadoPagoWebhookPayload, WebhookProcessResponse
 
 logger = logging.getLogger("apex_keys")
@@ -47,6 +48,43 @@ async def _credit_pix_deposit(session: AsyncSession, row: Transaction) -> Webhoo
         amount_credited=row.amount,
         new_balance=new_balance,
     )
+
+
+async def _finalize_raffle_payment_mp(
+    session: AsyncSession,
+    row: Transaction,
+) -> None:
+    """Marca bilhetes do hold como pagos (Pix rifa aprovado). Faz commit."""
+    if row.payment_hold_id is None:
+        row.status = "failed"
+        await session.commit()
+        webhook_log.error(
+            "[webhook_mp] raffle_payment sem payment_hold_id tx=%s ref=%s",
+            row.id,
+            (row.gateway_reference or "")[:48],
+        )
+        return
+    tickets, _raffle = await finalize_hold_as_paid(
+        session,
+        row.payment_hold_id,
+        mark_raffle_payment_tx_id=row.id,
+    )
+    if not tickets:
+        row.status = "failed"
+        webhook_log.error(
+            "[webhook_mp] rifa sem bilhetes pending hold=%s ref=%s",
+            row.payment_hold_id,
+            (row.gateway_reference or "")[:48],
+        )
+    await session.commit()
+    if tickets:
+        webhook_log.info(
+            "[webhook_mp] rifa ok tx=%s hold=%s tickets=%s ref=%s",
+            row.id,
+            row.payment_hold_id,
+            len(tickets),
+            (row.gateway_reference or "")[:48],
+        )
 
 
 def _payment_id_from_mercadopago_body(body: dict[str, Any], query_params) -> str | None:
@@ -93,10 +131,7 @@ async def _process_mercadopago_payment_id(
     status_mp = (payment.get("status") or "").lower()
     tr_result = await session.execute(
         select(Transaction)
-        .where(
-            Transaction.gateway_reference == str(ext_ref),
-            Transaction.type == "pix_deposit",
-        )
+        .where(Transaction.gateway_reference == str(ext_ref))
         .with_for_update(),
     )
     row = tr_result.scalar_one_or_none()
@@ -125,6 +160,8 @@ async def _process_mercadopago_payment_id(
             str(ext_ref)[:48],
         )
         row.status = "failed"
+        if row.type == "raffle_payment" and row.payment_hold_id:
+            await delete_pending_tickets_for_hold(session, row.payment_hold_id)
         await session.commit()
         return
 
@@ -149,7 +186,7 @@ async def _process_mercadopago_payment_id(
         await session.commit()
         return
 
-    if mp_amount != row.amount:
+    if mp_amount.quantize(Decimal("0.01")) != row.amount.quantize(Decimal("0.01")):
         webhook_log.error(
             "[webhook_mp] VALOR DIVERGENTE payment_id=%s mp_amount=%s tx_amount=%s ref=%s",
             payment_id,
@@ -160,7 +197,17 @@ async def _process_mercadopago_payment_id(
         await session.commit()
         return
 
-    await _credit_pix_deposit(session, row)
+    if row.type == "pix_deposit":
+        await _credit_pix_deposit(session, row)
+    elif row.type == "raffle_payment":
+        await _finalize_raffle_payment_mp(session, row)
+    else:
+        webhook_log.warning(
+            "[webhook_mp] tipo de transação não suportado type=%s ref=%s",
+            row.type,
+            str(ext_ref)[:48],
+        )
+        await session.commit()
 
 
 @router.post("/webhook/mp", response_model=WebhookProcessResponse)
@@ -178,10 +225,7 @@ async def mercado_pago_webhook(
     )
     tr_result = await session.execute(
         select(Transaction)
-        .where(
-            Transaction.gateway_reference == body.gateway_reference,
-            Transaction.type == "pix_deposit",
-        )
+        .where(Transaction.gateway_reference == body.gateway_reference)
         .with_for_update(),
     )
     row = tr_result.scalar_one_or_none()
@@ -199,7 +243,7 @@ async def mercado_pago_webhook(
         return WebhookProcessResponse(
             transaction_id=row.id,
             user_id=row.user_id,
-            amount_credited=row.amount,
+            amount_credited=row.amount if row.type == "pix_deposit" else Decimal("0"),
             new_balance=bal,
         )
 
@@ -211,13 +255,33 @@ async def mercado_pago_webhook(
 
     if body.status != "approved":
         row.status = "failed"
+        if row.type == "raffle_payment" and row.payment_hold_id:
+            await delete_pending_tickets_for_hold(session, row.payment_hold_id)
         await session.commit()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Pagamento não aprovado (status={body.status})",
         )
 
-    return await _credit_pix_deposit(session, row)
+    if row.type == "pix_deposit":
+        return await _credit_pix_deposit(session, row)
+
+    if row.type == "raffle_payment":
+        await _finalize_raffle_payment_mp(session, row)
+        u_result = await session.execute(select(User.balance).where(User.id == row.user_id))
+        bal = u_result.scalar_one_or_none()
+        assert bal is not None
+        return WebhookProcessResponse(
+            transaction_id=row.id,
+            user_id=row.user_id,
+            amount_credited=Decimal("0"),
+            new_balance=bal,
+        )
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=f"Tipo de transação não suportado: {row.type}",
+    )
 
 
 @router.post("/webhook/mercadopago")

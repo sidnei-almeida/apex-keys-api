@@ -54,8 +54,15 @@ async def list_raffles(
             ),
         )
         sold = int(sold_result or 0)
+        held_result = await session.scalar(
+            select(func.count()).select_from(Ticket).where(
+                Ticket.raffle_id == r.id,
+                Ticket.status == "pending_payment",
+            ),
+        )
+        held = int(held_result or 0)
         data = RafflePublic.model_validate(r).model_dump()
-        out.append(RaffleListOut(**data, sold=sold))
+        out.append(RaffleListOut(**data, sold=sold, held=held))
     return out
 
 
@@ -74,15 +81,25 @@ async def get_raffle_detail(
         select(Ticket.ticket_number).where(
             Ticket.raffle_id == raffle_id,
             Ticket.status == "paid",
-        )
+        ),
     )
-    sold_numbers = [int(row[0]) for row in sold_result.fetchall()]
+    sold_numbers = sorted(int(row[0]) for row in sold_result.fetchall())
+
+    held_result = await session.execute(
+        select(Ticket.ticket_number).where(
+            Ticket.raffle_id == raffle_id,
+            Ticket.status == "pending_payment",
+        ),
+    )
+    held_numbers = sorted(int(row[0]) for row in held_result.fetchall())
 
     data = RafflePublic.model_validate(raffle).model_dump()
     return RaffleDetailOut(
         **data,
         sold=len(sold_numbers),
+        held=len(held_numbers),
         sold_numbers=sold_numbers,
+        held_numbers=held_numbers,
     )
 
 

@@ -37,12 +37,14 @@ CREATE TABLE IF NOT EXISTS tickets (
     user_id UUID NOT NULL REFERENCES users (id),
     ticket_number INTEGER NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'paid',
+    payment_hold_id UUID,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     CONSTRAINT uq_ticket_raffle_number UNIQUE (raffle_id, ticket_number)
 );
 
 CREATE INDEX IF NOT EXISTS ix_tickets_raffle_id ON tickets (raffle_id);
 CREATE INDEX IF NOT EXISTS ix_tickets_user_id ON tickets (user_id);
+CREATE INDEX IF NOT EXISTS ix_tickets_payment_hold_id ON tickets (payment_hold_id);
 
 CREATE TABLE IF NOT EXISTS transactions (
     id UUID PRIMARY KEY,
@@ -52,7 +54,21 @@ CREATE TABLE IF NOT EXISTS transactions (
     status VARCHAR(20) NOT NULL DEFAULT 'pending',
     gateway_reference VARCHAR(255),
     description TEXT,
+    payment_hold_id UUID,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS ix_transactions_user_id ON transactions (user_id);
+CREATE INDEX IF NOT EXISTS ix_transactions_payment_hold_id ON transactions (payment_hold_id);
+
+CREATE TABLE IF NOT EXISTS notifications (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users (id),
+    type VARCHAR(50) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    body TEXT NOT NULL,
+    read_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS ix_notifications_user_id ON notifications (user_id);

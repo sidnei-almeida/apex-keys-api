@@ -78,7 +78,9 @@ class Ticket(Base):
     raffle_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("raffles.id"), index=True)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), index=True)
     ticket_number: Mapped[int] = mapped_column(Integer)
+    # paid | pending_payment (reservado aguardando pagamento) — linha apagada ao cancelar admin
     status: Mapped[str] = mapped_column(String(20), default="paid")
+    payment_hold_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     raffle: Mapped[Raffle] = relationship(back_populates="tickets")
@@ -95,6 +97,7 @@ class Transaction(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending")
     gateway_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payment_hold_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped[User] = relationship(back_populates="transactions")

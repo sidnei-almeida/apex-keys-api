@@ -44,7 +44,7 @@ async def list_my_tickets(
     query = (
         select(Ticket, Raffle)
         .join(Raffle, Ticket.raffle_id == Raffle.id)
-        .where(Ticket.user_id == user_id, Ticket.status == "paid")
+        .where(Ticket.user_id == user_id, Ticket.status.in_(("paid", "pending_payment")))
         .order_by(Ticket.created_at.desc())
     )
     if status_filter:
@@ -58,6 +58,7 @@ async def list_my_tickets(
             ticket_id=t.id,
             raffle_id=t.raffle_id,
             ticket_number=t.ticket_number,
+            status=t.status if t.status in ("paid", "pending_payment") else "paid",
             raffle=RafflePublic.model_validate(r),
             created_at=t.created_at,
         )
