@@ -113,6 +113,17 @@ class TransactionOut(BaseModel):
     created_at: datetime
 
 
+class NotificationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    type: str
+    title: str
+    body: str
+    read_at: datetime | None
+    created_at: datetime
+
+
 class TicketPurchaseRequest(BaseModel):
     raffle_id: UUID
     ticket_number: int = Field(..., ge=1)
@@ -126,6 +137,9 @@ class TicketPurchaseResponse(BaseModel):
     new_balance: Decimal
 
 
+FeaturedTierType = Literal["featured", "carousel", "none"]
+
+
 class RafflePublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -137,6 +151,31 @@ class RafflePublic(BaseModel):
     total_tickets: int
     ticket_price: Decimal
     status: Literal["active", "sold_out", "finished", "canceled"]
+    featured_tier: FeaturedTierType | None = None
+    created_at: datetime
+
+
+class RaffleListOut(RafflePublic):
+    """RafflePublic + quantidade de bilhetes vendidos (para listagem pública)."""
+
+    sold: int = 0
+
+
+class RaffleDetailOut(RaffleListOut):
+    """RaffleListOut + lista de números vendidos (para página de participação)."""
+
+    sold_numbers: list[int] = Field(default_factory=list)
+
+
+class MyTicketOut(BaseModel):
+    """Bilhete do usuário com dados da rifa."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    ticket_id: UUID
+    raffle_id: UUID
+    ticket_number: int
+    raffle: RafflePublic
     created_at: datetime
 
 
@@ -175,24 +214,41 @@ class AdminRaffleCreate(BaseModel):
     video_id: str | None = Field(None, max_length=64, description="ID do vídeo no YouTube")
     total_price: Decimal = Field(..., gt=0)
     total_tickets: int = Field(..., gt=0)
+    featured_tier: FeaturedTierType | None = Field(
+        None,
+        description="featured=hero home, carousel=carrossel, none=só em /rifas",
+    )
 
 
 class RaffleUpdate(BaseModel):
     """Actualização parcial de rifa (admin). `total_price` / `total_tickets` disparam recálculo de `ticket_price`."""
 
-    model_config = ConfigDict(str_strip_whitespace=True)
+    model_config = ConfigDict(str_strip_whitespace=True, extra="ignore")
 
     title: str | None = Field(default=None, min_length=1, max_length=255)
     image_url: str | None = Field(default=None, max_length=1024)
     video_id: str | None = Field(default=None, max_length=64, description="ID do vídeo no YouTube")
     total_price: Decimal | None = Field(default=None, gt=0)
     total_tickets: int | None = Field(default=None, gt=0)
+    featured_tier: FeaturedTierType | None = Field(
+        default=None,
+        description="featured=hero home, carousel=carrossel, none=só em /rifas",
+    )
 
 
 class RaffleImagePatch(BaseModel):
     """Atualiza só a URL da imagem de capa (ex.: 1080p)."""
 
     image_url: str | None = Field(default=None, max_length=1024, description="URL da imagem; null para limpar")
+
+
+class FeaturedTierPatch(BaseModel):
+    """Atualiza só o featured_tier (posição na home)."""
+
+    featured_tier: Literal["featured", "carousel", "none"] = Field(
+        ...,
+        description="featured=hero home, carousel=carrossel, none=só em /rifas",
+    )
 
 
 class RaffleVideoPatch(BaseModel):

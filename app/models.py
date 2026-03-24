@@ -21,6 +21,12 @@ class RaffleStatus(str, PyEnum):
     canceled = "canceled"
 
 
+class FeaturedTier(str, PyEnum):
+    featured = "featured"
+    carousel = "carousel"
+    none = "none"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -37,6 +43,7 @@ class User(Base):
 
     tickets: Mapped[list["Ticket"]] = relationship(back_populates="user")
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="user")
+    notifications: Mapped[list["Notification"]] = relationship(back_populates="user")
 
 
 class Raffle(Base):
@@ -52,6 +59,11 @@ class Raffle(Base):
     status: Mapped[str] = mapped_column(
         String(20),
         default=RaffleStatus.active.value,
+    )
+    featured_tier: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+        default=FeaturedTier.none.value,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -86,3 +98,17 @@ class Transaction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped[User] = relationship(back_populates="transactions")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), index=True)
+    type: Mapped[str] = mapped_column(String(50))
+    title: Mapped[str] = mapped_column(String(255))
+    body: Mapped[str] = mapped_column(Text)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    user: Mapped[User] = relationship(back_populates="notifications")

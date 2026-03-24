@@ -1,4 +1,6 @@
+import asyncio
 import re
+from collections import defaultdict
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -6,12 +8,14 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_session
-from app.models import Raffle, RaffleStatus, Ticket, Transaction, User
+from app.email_service import send_raffle_canceled_refund_email
+from app.models import FeaturedTier, Notification, Raffle, RaffleStatus, Ticket, Transaction, User
 from app.pricing import tactical_ticket_price
 from app.schemas import (
     AdminRaffleCreate,
     AdminWalletAdjust,
     AdminWalletAdjustResponse,
+    FeaturedTierPatch,
     RaffleCancelResponse,
     RaffleDeleteResponse,
     RaffleImagePatch,
@@ -82,6 +86,7 @@ async def create_raffle(
     session: AsyncSession = Depends(get_session),
 ) -> RafflePublic:
     ticket_price = tactical_ticket_price(body.total_price, body.total_tickets)
+    ft = body.featured_tier if body.featured_tier in ("featured", "carousel", "none") else FeaturedTier.none.value
     raffle = Raffle(
         title=body.title,
         image_url=body.image_url,
@@ -90,6 +95,7 @@ async def create_raffle(
         total_tickets=body.total_tickets,
         ticket_price=ticket_price,
         status=RaffleStatus.active.value,
+        featured_tier=ft,
     )
     session.add(raffle)
     await session.flush()
@@ -162,6 +168,9 @@ async def update_raffle(
     for key in ("title", "image_url", "video_id"):
         if key in data:
             setattr(raffle, key, data[key])
+    if "featured_tier" in data:
+        val = data["featured_tier"]
+        raffle.featured_tier = val if val in ("featured", "carousel", "none") else FeaturedTier.none.value
 
     await session.flush()
     await session.refresh(raffle)
@@ -183,6 +192,26 @@ async def patch_raffle_image(
     if raffle is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sorteio não encontrado")
     raffle.image_url = body.image_url
+    await session.flush()
+    await session.refresh(raffle)
+    return RafflePublic.model_validate(raffle)
+
+
+@router.patch("/raffles/{raffle_id}/featured-tier", response_model=RafflePublic)
+async def patch_raffle_featured_tier(
+    raffle_id: UUID,
+    body: FeaturedTierPatch,
+    _admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_session),
+) -> RafflePublic:
+    """Atualiza só o featured_tier (estrela) — útil para mudar posição na home sem reenviar toda a rifa."""
+    r_result = await session.execute(
+        select(Raffle).where(Raffle.id == raffle_id).with_for_update(),
+    )
+    raffle = r_result.scalar_one_or_none()
+    if raffle is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sorteio não encontrado")
+    raffle.featured_tier = body.featured_tier
     await session.flush()
     await session.refresh(raffle)
     return RafflePublic.model_validate(raffle)
@@ -250,6 +279,8 @@ async def cancel_raffle(
 
     refunds = 0
     price = raffle.ticket_price
+    user_ticket_count: dict[UUID, int] = defaultdict(int)
+
     for t in tickets:
         u_result = await session.execute(select(User).where(User.id == t.user_id).with_for_update())
         user = u_result.scalar_one_or_none()
@@ -265,7 +296,41 @@ async def cancel_raffle(
                 description=f"Estorno — rifa cancelada ({raffle.title}) — bilhete nº {t.ticket_number}",
             ),
         )
+        user_ticket_count[t.user_id] += 1
         refunds += 1
+
+    # Notificações in-app e emails para cada usuário afetado
+    if user_ticket_count:
+        user_ids = list(user_ticket_count.keys())
+        users_result = await session.execute(select(User).where(User.id.in_(user_ids)))
+        users_by_id = {u.id: u for u in users_result.scalars().all()}
+
+        for uid, count in user_ticket_count.items():
+            user = users_by_id.get(uid)
+            if user is None:
+                continue
+            total_refund = price * count
+            amount_str = f"R$ {float(total_refund):.2f}".replace(".", ",")
+            title = f"Rifa cancelada: {raffle.title}"
+            body = f"O valor de {amount_str} foi creditado na sua carteira. Você pode utilizar em outras rifas ou solicitar saque."
+
+            session.add(
+                Notification(
+                    user_id=uid,
+                    type="raffle_canceled_refund",
+                    title=title,
+                    body=body,
+                ),
+            )
+            # Enviar email em background (não bloqueia a resposta)
+            asyncio.create_task(
+                send_raffle_canceled_refund_email(
+                    to_email=user.email,
+                    full_name=user.full_name,
+                    raffle_title=raffle.title,
+                    amount_refunded=amount_str,
+                ),
+            )
 
     return RaffleCancelResponse(raffle_id=raffle_id, status="canceled", refunds_issued=refunds)
 
