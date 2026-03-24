@@ -2,23 +2,37 @@
 
 from __future__ import annotations
 
-import logging
 import uuid
 from decimal import Decimal
 from typing import Any
 
 import httpx
 
-logger = logging.getLogger("apex_keys")
+from app.mp_logging import (
+    log_mp_create_failure,
+    log_mp_create_request,
+    log_mp_create_success,
+    log_mp_get_payment,
+    mp_parse_error_message,
+    payer_email_domain,
+)
 
 MP_PAYMENTS_URL = "https://api.mercadopago.com/v1/payments"
 
 
 class MercadoPagoApiError(Exception):
-    def __init__(self, message: str, *, status_code: int | None = None, body: str | None = None):
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        body: str | None = None,
+        mp_parsed_detail: str | None = None,
+    ):
         super().__init__(message)
         self.status_code = status_code
         self.body = body
+        self.mp_parsed_detail = mp_parsed_detail
 
 
 async def create_pix_payment(
@@ -32,6 +46,13 @@ async def create_pix_payment(
     """
     Cria pagamento Pix. Retorna o JSON completo da API (inclui id, status, point_of_interaction).
     """
+    amount_str = str(amount)
+    log_mp_create_request(
+        external_reference=external_reference,
+        amount=amount_str,
+        payer_email_domain=payer_email_domain(payer_email),
+    )
+
     payload = {
         "transaction_amount": float(amount),
         "description": description[:255],
@@ -48,13 +69,29 @@ async def create_pix_payment(
         r = await client.post(MP_PAYMENTS_URL, json=payload, headers=headers)
     text = r.text
     if r.status_code >= 400:
-        logger.warning("Mercado Pago create payment failed: %s %s", r.status_code, text[:500])
+        parsed = mp_parse_error_message(text)
+        log_mp_create_failure(
+            status_code=r.status_code,
+            body_text=text,
+            external_reference=external_reference,
+        )
         raise MercadoPagoApiError(
-            f"Mercado Pago rejeitou o pagamento ({r.status_code})",
+            f"Mercado Pago rejeitou o pagamento ({r.status_code}): {parsed or 'sem detalhe'}",
             status_code=r.status_code,
             body=text,
+            mp_parsed_detail=parsed or None,
         )
     data = r.json()
+    ext = data.get("external_reference") or external_reference
+    poi = data.get("point_of_interaction") or {}
+    td = poi.get("transaction_data") or {}
+    log_mp_create_success(
+        payment_id=str(data.get("id", "")) or None,
+        status=str(data.get("status", "")) or None,
+        external_reference=str(ext) if ext else None,
+        has_qr_code=bool(td.get("qr_code")),
+        has_ticket_url=bool(td.get("ticket_url")),
+    )
     return data
 
 
@@ -65,12 +102,26 @@ async def get_payment(access_token: str, payment_id: str) -> dict[str, Any]:
             headers={"Authorization": f"Bearer {access_token}"},
         )
     if r.status_code >= 400:
+        log_mp_get_payment(
+            payment_id=payment_id,
+            ok=False,
+            status_code=r.status_code,
+            body_text=r.text,
+        )
         raise MercadoPagoApiError(
-            f"Não foi possível obter o pagamento ({r.status_code})",
+            f"Não foi possível obter o pagamento ({r.status_code}): {mp_parse_error_message(r.text)}",
             status_code=r.status_code,
             body=r.text,
+            mp_parsed_detail=mp_parse_error_message(r.text) or None,
         )
-    return r.json()
+    data = r.json()
+    log_mp_get_payment(
+        payment_id=payment_id,
+        ok=True,
+        mp_status=str(data.get("status", "")) or None,
+        external_reference=str(data.get("external_reference", "")) or None,
+    )
+    return data
 
 
 def extract_pix_qr_from_payment(payment: dict[str, Any]) -> dict[str, Any | None]:

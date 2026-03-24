@@ -1,3 +1,4 @@
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -17,6 +18,7 @@ from app.security import get_current_user_id
 from app.utils import mock_pix_qr_payload
 
 router = APIRouter()
+logger = logging.getLogger("apex_keys.wallet")
 
 
 @router.get("/balance", response_model=WalletBalanceResponse)
@@ -60,6 +62,11 @@ async def create_mock_pix_intent(
         select(Transaction.id).where(Transaction.gateway_reference == body.gateway_reference),
     )
     if dup.scalar_one_or_none() is not None:
+        logger.warning(
+            "[wallet] mock-pix-intent conflict gateway_ref=%s user_id=%s",
+            body.gateway_reference[:48],
+            user_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="gateway_reference já utilizado",
@@ -81,6 +88,14 @@ async def create_mock_pix_intent(
                 external_reference=body.gateway_reference,
             )
         except MercadoPagoApiError as e:
+            logger.error(
+                "[wallet] mock-pix-intent MP error user_id=%s amount=%s ref=%s http=%s detail=%s",
+                user_id,
+                body.amount,
+                body.gateway_reference[:48],
+                e.status_code,
+                (e.mp_parsed_detail or e.args[0])[:300],
+            )
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=e.args[0],
@@ -97,6 +112,12 @@ async def create_mock_pix_intent(
         session.add(tr)
         await session.commit()
         mp_payload = extract_pix_qr_from_payment(payment)
+        logger.info(
+            "[wallet] mock-pix-intent ok provider=mercadopago user_id=%s payment_id=%s ref=%s",
+            user_id,
+            mp_payload.get("payment_id"),
+            body.gateway_reference[:48],
+        )
         return {
             "message": "Transação pendente criada (Mercado Pago)",
             "provider": "mercadopago",
@@ -115,6 +136,12 @@ async def create_mock_pix_intent(
     session.add(tr)
     await session.commit()
     qr = mock_pix_qr_payload(body.gateway_reference, body.amount)
+    logger.info(
+        "[wallet] mock-pix-intent ok provider=mock user_id=%s amount=%s ref=%s",
+        user_id,
+        body.amount,
+        body.gateway_reference[:48],
+    )
     return {
         "message": "Transação pendente criada (mock)",
         "provider": "mock",

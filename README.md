@@ -342,6 +342,7 @@ Códigos HTTP usuais: `200` / `201` sucesso, `400` regra de negócio, `401` / `4
 ## Operação e observabilidade
 
 - **Logs:** erros não tratados são registrados no logger `apex_keys` com stack trace **no servidor**; a resposta HTTP `500` expõe apenas mensagem genérica ao cliente.
+- **Mercado Pago / carteira:** mensagens com prefixo `[mp]`, `[wallet]` e `[webhook_mp]` nos loggers `apex_keys.mp`, `apex_keys.wallet`, `apex_keys.webhook_mp` (Railway: filtrar por `mp]` ou `webhook_mp`). Incluem `http=`, mensagem parseada do MP e `ext_ref`/`payment_id` (sem token).
 - **Validação:** respostas `422` incluem `detail` e lista `errors` compatível com o formato FastAPI/Pydantic.
 - **CORS:** origens permitidas vêm exclusivamente de `CORS_ORIGINS` (lista separada por vírgulas). Lista vazia resulta em **nenhuma** origem de browser liberada por CORS.
 

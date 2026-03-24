@@ -10,9 +10,11 @@ from app.config import get_settings
 from app.deps import get_session
 from app.mercado_pago_service import MercadoPagoApiError, get_payment
 from app.models import Transaction, User
+from app.mp_logging import webhook_incoming_summary
 from app.schemas import MercadoPagoWebhookPayload, WebhookProcessResponse
 
 logger = logging.getLogger("apex_keys")
+webhook_log = logging.getLogger("apex_keys.webhook_mp")
 
 router = APIRouter()
 
@@ -21,11 +23,24 @@ async def _credit_pix_deposit(session: AsyncSession, row: Transaction) -> Webhoo
     u_result = await session.execute(select(User).where(User.id == row.user_id).with_for_update())
     user = u_result.scalar_one_or_none()
     if user is None:
+        webhook_log.error(
+            "[webhook_mp] credit skip user missing transaction_id=%s gateway_ref=%s",
+            row.id,
+            (row.gateway_reference or "")[:48],
+        )
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuário não encontrado")
     user.balance = user.balance + row.amount
     row.status = "completed"
     new_balance = user.balance
     await session.commit()
+    webhook_log.info(
+        "[webhook_mp] credit ok transaction_id=%s user_id=%s amount=%s new_balance=%s ref=%s",
+        row.id,
+        row.user_id,
+        row.amount,
+        new_balance,
+        (row.gateway_reference or "")[:48],
+    )
     return WebhookProcessResponse(
         transaction_id=row.id,
         user_id=row.user_id,
@@ -55,7 +70,12 @@ async def _process_mercadopago_payment_id(
     try:
         payment = await get_payment(access_token, payment_id)
     except MercadoPagoApiError as e:
-        logger.exception("Falha ao consultar pagamento MP %s: %s", payment_id, e)
+        webhook_log.exception(
+            "[webhook_mp] get_payment falhou payment_id=%s http=%s detail=%s",
+            payment_id,
+            e.status_code,
+            (e.mp_parsed_detail or str(e))[:400],
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Falha ao consultar Mercado Pago",
@@ -63,6 +83,11 @@ async def _process_mercadopago_payment_id(
 
     ext_ref = payment.get("external_reference")
     if not ext_ref:
+        webhook_log.warning(
+            "[webhook_mp] payment sem external_reference payment_id=%s mp_status=%s",
+            payment_id,
+            payment.get("status"),
+        )
         return
 
     status_mp = (payment.get("status") or "").lower()
@@ -76,34 +101,61 @@ async def _process_mercadopago_payment_id(
     )
     row = tr_result.scalar_one_or_none()
     if row is None:
+        webhook_log.info(
+            "[webhook_mp] sem transação local payment_id=%s ext_ref=%s (ignorado)",
+            payment_id,
+            str(ext_ref)[:48],
+        )
         return
 
     if row.status == "completed":
+        webhook_log.info(
+            "[webhook_mp] idempotente já completed payment_id=%s ref=%s",
+            payment_id,
+            str(ext_ref)[:48],
+        )
         await session.commit()
         return
 
     if status_mp in ("rejected", "cancelled", "refunded", "charged_back"):
+        webhook_log.info(
+            "[webhook_mp] pagamento finalizado negativo payment_id=%s status=%s ref=%s",
+            payment_id,
+            status_mp,
+            str(ext_ref)[:48],
+        )
         row.status = "failed"
         await session.commit()
         return
 
     if status_mp != "approved":
+        webhook_log.info(
+            "[webhook_mp] aguardando outro status payment_id=%s mp_status=%s ref=%s",
+            payment_id,
+            status_mp,
+            str(ext_ref)[:48],
+        )
         await session.commit()
         return
 
     try:
         mp_amount = Decimal(str(payment.get("transaction_amount", "0")))
     except Exception:
-        logger.error("transaction_amount inválido no pagamento MP %s", payment_id)
+        webhook_log.error(
+            "[webhook_mp] transaction_amount inválido payment_id=%s raw=%s",
+            payment_id,
+            payment.get("transaction_amount"),
+        )
         await session.commit()
         return
 
     if mp_amount != row.amount:
-        logger.error(
-            "Valor MP (%s) ≠ transação (%s) ref=%s",
+        webhook_log.error(
+            "[webhook_mp] VALOR DIVERGENTE payment_id=%s mp_amount=%s tx_amount=%s ref=%s",
+            payment_id,
             mp_amount,
             row.amount,
-            ext_ref,
+            str(ext_ref)[:48],
         )
         await session.commit()
         return
@@ -119,6 +171,11 @@ async def mercado_pago_webhook(
     """
     Mock / teste manual: com `status=approved`, confirma depósito Pix pendente.
     """
+    webhook_log.info(
+        "[webhook_mp_mock] gateway_ref=%s status=%s",
+        body.gateway_reference[:48],
+        body.status,
+    )
     tr_result = await session.execute(
         select(Transaction)
         .where(
@@ -174,7 +231,7 @@ async def mercadopago_ipn_post(
     settings = get_settings()
     token = (settings.mercado_pago_access_token or "").strip()
     if not token:
-        logger.warning("Webhook Mercado Pago recebido mas token não configurado")
+        webhook_log.warning("[webhook_mp] POST recebido sem MERCADO_PAGO_ACCESS_TOKEN configurado")
         return {"received": True}
 
     try:
@@ -186,7 +243,13 @@ async def mercadopago_ipn_post(
         body = {}
 
     payment_id = _payment_id_from_mercadopago_body(body, request.query_params)
+    webhook_log.info(
+        "[webhook_mp] POST notificação summary=%s payment_id=%s",
+        webhook_incoming_summary(body),
+        payment_id or "—",
+    )
     if not payment_id:
+        webhook_log.warning("[webhook_mp] POST sem payment_id ignorado body_keys=%s", list(body.keys())[:12])
         return {"received": True}
 
     await _process_mercadopago_payment_id(session, token, payment_id)
@@ -205,6 +268,11 @@ async def mercadopago_ipn_get(
         return {"received": True}
 
     payment_id = _payment_id_from_mercadopago_body({}, request.query_params)
+    webhook_log.info(
+        "[webhook_mp] GET notificação topic=%s payment_id=%s",
+        request.query_params.get("topic"),
+        payment_id or "—",
+    )
     if not payment_id:
         return {"received": True}
 
