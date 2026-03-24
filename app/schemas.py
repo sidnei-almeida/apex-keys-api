@@ -113,7 +113,7 @@ class TransactionOut(BaseModel):
         "admin_adjustment",
         "raffle_payment",
     ]
-    status: Literal["pending", "completed", "failed"]
+    status: Literal["pending", "completed", "failed", "canceled"]
     gateway_reference: str | None
     description: str | None
     payment_hold_id: UUID | None = None
@@ -170,24 +170,36 @@ class ReservationStatusOut(BaseModel):
     state: Literal["pending_payment", "paid", "released", "unknown"]
     raffle_id: UUID | None = None
     ticket_numbers: list[int] = Field(default_factory=list)
-    transaction_status: Literal["pending", "completed", "failed"] | None = None
+    transaction_status: Literal["pending", "completed", "failed", "canceled"] | None = None
     gateway_reference: str | None = None
 
 
 class AdminReservationRowOut(BaseModel):
-    payment_hold_id: UUID
+    """active = reserva com bilhetes pending; archived = registo raffle_payment finalizado (auditoria)."""
+
+    row_kind: Literal["active", "archived"] = "active"
+    payment_hold_id: UUID | None = None
     user_id: UUID
     user_email: str
     user_name: str
-    raffle_id: UUID
+    raffle_id: UUID | None = None
     raffle_title: str
-    ticket_numbers: list[int]
+    ticket_numbers: list[int] = Field(default_factory=list)
     total_amount: Decimal
     created_at: datetime
+    expires_at: datetime | None = Field(
+        None,
+        description="Só active: fim da janela de 15 min antes da expiração automática",
+    )
     payment_channel: Literal["pix", "wallet_pending", "none"]
     transaction_id: UUID | None = None
-    transaction_status: Literal["pending", "completed", "failed"] | None = None
+    transaction_status: Literal["pending", "completed", "failed", "canceled"] | None = None
     gateway_reference: str | None = None
+
+
+class AdminReservationsListOut(BaseModel):
+    active: list[AdminReservationRowOut]
+    archived: list[AdminReservationRowOut]
 
 
 FeaturedTierType = Literal["featured", "carousel", "none"]

@@ -1,9 +1,10 @@
 import asyncio
 import re
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,14 +13,18 @@ from app.email_service import send_raffle_canceled_refund_email
 from app.models import FeaturedTier, Notification, Raffle, RaffleStatus, Ticket, Transaction, User
 from app.pricing import tactical_ticket_price
 from app.reservation_service import (
+    RAFFLE_PAYMENT_AUDIT_RETENTION_DAYS,
     cancel_hold_reservation,
     expire_stale_pending_reservations,
     finalize_hold_as_paid,
     load_pending_tickets_for_hold,
+    purge_stale_raffle_payment_audit_records,
+    reservation_expires_at_utc,
 )
 from app.schemas import (
     AdminRaffleCreate,
     AdminReservationRowOut,
+    AdminReservationsListOut,
     AdminWalletAdjust,
     AdminWalletAdjustResponse,
     FeaturedTierPatch,
@@ -390,13 +395,14 @@ async def delete_raffle(
     return RaffleDeleteResponse(raffle_id=raffle_id, tickets_removed=tickets_removed)
 
 
-@router.get("/reservations", response_model=list[AdminReservationRowOut])
+@router.get("/reservations", response_model=AdminReservationsListOut)
 async def admin_list_pending_reservations(
     _admin: User = Depends(get_current_admin),
     session: AsyncSession = Depends(get_session),
-) -> list[AdminReservationRowOut]:
-    """Reservas com bilhetes pending_payment (Transações & Controle no QG)."""
+) -> AdminReservationsListOut:
+    """Reservas ativas + histórico de rifa (pago / cancelado / falha) para auditoria."""
     await expire_stale_pending_reservations(session)
+    await purge_stale_raffle_payment_audit_records(session)
     tr = await session.execute(
         select(Ticket, User, Raffle)
         .join(User, Ticket.user_id == User.id)
@@ -413,7 +419,7 @@ async def admin_list_pending_reservations(
         assert t.payment_hold_id is not None
         by_hold[t.payment_hold_id].append((t, u, r))
 
-    out: list[AdminReservationRowOut] = []
+    active: list[AdminReservationRowOut] = []
     for hold_id, items in by_hold.items():
         t0, user, raffle = items[0]
         nums = sorted(x[0].ticket_number for x in items)
@@ -432,8 +438,9 @@ async def admin_list_pending_reservations(
         else:
             channel = "none"
         created_at = min(x[0].created_at for x in items)
-        out.append(
+        active.append(
             AdminReservationRowOut(
+                row_kind="active",
                 payment_hold_id=hold_id,
                 user_id=user.id,
                 user_email=user.email,
@@ -443,14 +450,60 @@ async def admin_list_pending_reservations(
                 ticket_numbers=nums,
                 total_amount=total,
                 created_at=created_at,
+                expires_at=reservation_expires_at_utc(created_at),
                 payment_channel=channel,
                 transaction_id=tx.id if tx else None,
                 transaction_status=tx.status if tx else None,
                 gateway_reference=tx.gateway_reference if tx else None,
             ),
         )
-    out.sort(key=lambda x: x.created_at, reverse=True)
-    return out
+    active.sort(key=lambda x: x.created_at, reverse=True)
+
+    arch_r = await session.execute(
+        select(Transaction, User)
+        .join(User, Transaction.user_id == User.id)
+        .where(
+            Transaction.type == "raffle_payment",
+            Transaction.status.in_(("canceled", "failed", "completed")),
+        )
+        .order_by(Transaction.created_at.desc())
+        .limit(250),
+    )
+    archived: list[AdminReservationRowOut] = []
+    for tx, user in arch_r.all():
+        snap = tx.raffle_checkout_snapshot if isinstance(tx.raffle_checkout_snapshot, dict) else {}
+        nums_raw = snap.get("ticket_numbers")
+        nums = [int(n) for n in nums_raw] if isinstance(nums_raw, list) else []
+        rid_raw = snap.get("raffle_id")
+        raffle_uuid: UUID | None = None
+        if isinstance(rid_raw, str):
+            try:
+                raffle_uuid = UUID(rid_raw)
+            except ValueError:
+                raffle_uuid = None
+        title = snap.get("raffle_title") if isinstance(snap.get("raffle_title"), str) else "—"
+        channel_arch = "pix" if (tx.gateway_reference or "").strip() else "none"
+        archived.append(
+            AdminReservationRowOut(
+                row_kind="archived",
+                payment_hold_id=tx.payment_hold_id,
+                user_id=user.id,
+                user_email=user.email,
+                user_name=user.full_name,
+                raffle_id=raffle_uuid,
+                raffle_title=title,
+                ticket_numbers=nums,
+                total_amount=tx.amount,
+                created_at=tx.created_at,
+                expires_at=None,
+                payment_channel=channel_arch,
+                transaction_id=tx.id,
+                transaction_status=tx.status,
+                gateway_reference=tx.gateway_reference,
+            ),
+        )
+
+    return AdminReservationsListOut(active=active, archived=archived)
 
 
 @router.post("/reservations/{hold_id}/confirm")
@@ -489,7 +542,41 @@ async def admin_cancel_reservation(
     _admin: User = Depends(get_current_admin),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Liberta números e remove cobrança Pix pendente associada."""
-    n = await cancel_hold_reservation(session, hold_id)
+    """Liberta números; mantém registo da transação como cancelada (auditoria)."""
+    n = await cancel_hold_reservation(session, hold_id, reason="admin_qg")
     await session.commit()
     return {"released_tickets": n, "payment_hold_id": str(hold_id)}
+
+
+@router.delete("/transactions/{transaction_id}")
+async def admin_delete_raffle_transaction_record(
+    transaction_id: UUID,
+    _admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """
+    Apaga permanentemente um registo `raffle_payment` já finalizado, desde que
+    tenha mais de RAFFLE_PAYMENT_AUDIT_RETENTION_DAYS na base (retenção legal).
+    """
+    row = await session.get(Transaction, transaction_id)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transação não encontrada")
+    if row.type != "raffle_payment" or row.status not in ("canceled", "failed", "completed"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Só pode apagar registos de rifa finalizados (pago, cancelado ou falha).",
+        )
+    created = row.created_at
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    threshold = datetime.now(timezone.utc) - timedelta(days=RAFFLE_PAYMENT_AUDIT_RETENTION_DAYS)
+    if created > threshold:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Período de retenção: aguarde {RAFFLE_PAYMENT_AUDIT_RETENTION_DAYS} dias após a criação "
+                "do registo antes de eliminar."
+            ),
+        )
+    await session.delete(row)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

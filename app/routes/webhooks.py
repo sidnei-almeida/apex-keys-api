@@ -11,7 +11,12 @@ from app.deps import get_session
 from app.mercado_pago_service import MercadoPagoApiError, get_payment
 from app.models import Transaction, User
 from app.mp_logging import webhook_incoming_summary
-from app.reservation_service import delete_pending_tickets_for_hold, finalize_hold_as_paid
+from app.reservation_service import (
+    delete_pending_tickets_for_hold,
+    ensure_raffle_checkout_snapshot,
+    finalize_hold_as_paid,
+    load_pending_tickets_for_hold,
+)
 from app.schemas import MercadoPagoWebhookPayload, WebhookProcessResponse
 
 logger = logging.getLogger("apex_keys")
@@ -152,6 +157,16 @@ async def _process_mercadopago_payment_id(
         await session.commit()
         return
 
+    if row.status in ("canceled", "failed"):
+        webhook_log.info(
+            "[webhook_mp] transação já encerrada (%s) payment_id=%s ref=%s — ignorado",
+            row.status,
+            payment_id,
+            str(ext_ref)[:48],
+        )
+        await session.commit()
+        return
+
     if status_mp in ("rejected", "cancelled", "refunded", "charged_back"):
         webhook_log.info(
             "[webhook_mp] pagamento finalizado negativo payment_id=%s status=%s ref=%s",
@@ -161,7 +176,12 @@ async def _process_mercadopago_payment_id(
         )
         row.status = "failed"
         if row.type == "raffle_payment" and row.payment_hold_id:
-            await delete_pending_tickets_for_hold(session, row.payment_hold_id)
+            hid = row.payment_hold_id
+            pend = await load_pending_tickets_for_hold(session, hid)
+            await ensure_raffle_checkout_snapshot(session, hid, pend)
+            extra = f" | [MP recusado: {status_mp}]"
+            row.description = ((row.description or "") + extra)[:500]
+            await delete_pending_tickets_for_hold(session, hid)
         await session.commit()
         return
 
@@ -253,10 +273,21 @@ async def mercado_pago_webhook(
             detail="Transação já registrada como falha",
         )
 
+    if row.status == "canceled":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Transação cancelada — registo mantido para auditoria",
+        )
+
     if body.status != "approved":
         row.status = "failed"
         if row.type == "raffle_payment" and row.payment_hold_id:
-            await delete_pending_tickets_for_hold(session, row.payment_hold_id)
+            hid = row.payment_hold_id
+            pend = await load_pending_tickets_for_hold(session, hid)
+            await ensure_raffle_checkout_snapshot(session, hid, pend)
+            extra = f" | [Mock MP: {body.status}]"
+            row.description = ((row.description or "") + extra)[:500]
+            await delete_pending_tickets_for_hold(session, hid)
         await session.commit()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

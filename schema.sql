@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     gateway_reference VARCHAR(255),
     description TEXT,
     payment_hold_id UUID,
+    raffle_checkout_snapshot JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

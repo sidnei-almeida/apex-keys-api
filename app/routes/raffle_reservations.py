@@ -21,6 +21,7 @@ from app.reservation_service import (
     expire_stale_pending_reservations,
     finalize_hold_as_paid,
     load_pending_tickets_for_hold,
+    reservation_expires_at_utc,
 )
 from app.schemas import (
     CompleteReservationWalletBody,
@@ -236,6 +237,8 @@ async def create_reservation_pix_intent(
         )
 
     total = raffle.ticket_price * len(tickets)
+    created_min = min(t.created_at for t in tickets)
+    expires_at = reservation_expires_at_utc(created_min)
     nums_preview = ", ".join(str(t.ticket_number) for t in tickets[:12])
     if len(tickets) > 12:
         nums_preview += "…"
@@ -249,6 +252,11 @@ async def create_reservation_pix_intent(
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuário não encontrado")
 
+    snap = {
+        "raffle_id": str(raffle.id),
+        "raffle_title": raffle.title,
+        "ticket_numbers": sorted(t.ticket_number for t in tickets),
+    }
     tr = Transaction(
         user_id=user_id,
         amount=total,
@@ -257,6 +265,7 @@ async def create_reservation_pix_intent(
         gateway_reference=body.gateway_reference,
         description=desc[:500],
         payment_hold_id=hold_id,
+        raffle_checkout_snapshot=snap,
     )
     session.add(tr)
     await session.flush()
@@ -295,6 +304,7 @@ async def create_reservation_pix_intent(
             "transaction_id": str(tr.id),
             "payment_hold_id": str(hold_id),
             "amount": str(total),
+            "expires_at": expires_at.isoformat(),
         }
 
     await session.commit()
@@ -307,6 +317,7 @@ async def create_reservation_pix_intent(
         "transaction_id": str(tr.id),
         "payment_hold_id": str(hold_id),
         "amount": str(total),
+        "expires_at": expires_at.isoformat(),
     }
 
 
@@ -373,7 +384,7 @@ async def release_reservation_self(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Nada para liberar",
         )
-    n = await cancel_hold_reservation(session, hold_id)
+    n = await cancel_hold_reservation(session, hold_id, reason="utilizador_desistiu")
     await session.commit()
     logger.info(
         "[release] user=%s hold=%s released_tickets=%s",
