@@ -4,12 +4,21 @@ from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+<<<<<<< HEAD
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_session
 from app.models import Notification, Raffle, RaffleStatus, Ticket, User
 from app.schemas import MyTicketOut, NotificationOut, RafflePublic, UserProfileUpdate, UserPublic
+=======
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.deps import get_session
+from app.models import Raffle, RaffleStatus, Ticket, User
+from app.schemas import MyTicketOut, RafflePublic, UserProfileUpdate, UserPublic
+>>>>>>> 75f97553d989440384cd426137df4bb83a544587
 from app.security import get_current_user_id
 
 router = APIRouter()
@@ -65,6 +74,7 @@ async def list_my_tickets(
     ]
 
 
+<<<<<<< HEAD
 @router.get("/me/notifications", response_model=list[NotificationOut])
 async def list_my_notifications(
     unread_only: bool = Query(False, alias="unread_only"),
@@ -147,6 +157,8 @@ async def mark_all_notifications_read(
     return {"message": "Todas as notificações foram marcadas como lidas"}
 
 
+=======
+>>>>>>> 75f97553d989440384cd426137df4bb83a544587
 @router.patch("/me", response_model=UserPublic)
 async def update_me(
     body: UserProfileUpdate,
