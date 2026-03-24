@@ -1,0 +1,105 @@
+{
+  "_instrucoes": "Modelo versionado. Para trabalhar: cp bulk_raffles_catalog.example.json bulk_raffles_catalog.local.json e edita o .local (gitignored).",
+  "games": [
+    {
+      "title": "Resident Evil Requiem (2026)",
+      "image_url": "",
+      "trailer_youtube": ""
+    },
+    {
+      "title": "Clair Obscur: Expedition 33",
+      "image_url": "",
+      "trailer_youtube": ""
+    },
+    {
+      "title": "Monster Hunter Wilds",
+      "image_url": "",
+      "trailer_youtube": ""
+    },
+    {
+      "title": "Death Stranding 2: On the Beach",
+      "image_url": "",
+      "trailer_youtube": ""
+    },
+    {
+      "title": "Hollow Knight: Silksong",
+      "image_url": "",
+      "trailer_youtube": ""
+    },
+    {
+      "title": "Grand Theft Auto VI",
+      "image_url": "",
+      "trailer_youtube": ""
+    },
+    {
+      "title": "Metroid Prime 4: Beyond",
+      "image_url": "",
+      "trailer_youtube": ""
+    },
+    {
+      "title": "Ghost of Yōtei",
+      "image_url": "",
+      "trailer_youtube": ""
+    },
+    {
+      "title": "Mafia: The Old Country",
+      "image_url": "",
+      "trailer_youtube": ""
+    },
+    {
+      "title": "DOOM: The Dark Ages",
+      "image_url": "",
+      "trailer_youtube": ""
+    },
+    {
+      "title": "Battlefield 6",
+      "image_url": "",
+      "trailer_youtube": ""
+    },
+    {
+      "title": "Borderlands 4",
+      "image_url": "",
+      "trailer_youtube": ""
+    },
+    {
+      "title": "Call of Duty: Black Ops 7",
+      "image_url": "",
+      "trailer_youtube": ""
+    },
+    {
+      "title": "Assassin's Creed Shadows",
+      "image_url": "",
+      "trailer_youtube": ""
+    },
+    {
+      "title": "Star Wars Outlaws",
+      "image_url": "",
+      "trailer_youtube": ""
+    },
+    {
+      "title": "Dragon Age: The Veilguard",
+      "image_url": "",
+      "trailer_youtube": ""
+    },
+    {
+      "title": "Black Myth: Wukong",
+      "image_url": "",
+      "trailer_youtube": ""
+    },
+    {
+      "title": "Elden Ring: Nightreign",
+      "image_url": "",
+      "trailer_youtube": ""
+    },
+    {
+      "title": "Avowed",
+      "image_url": "",
+      "trailer_youtube": ""
+    },
+    {
+      "title": "Indiana Jones and the Great Circle",
+      "image_url": "",
+      "trailer_youtube": ""
+    }
+  ]
+}

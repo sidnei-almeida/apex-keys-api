@@ -22,6 +22,8 @@ class RaffleStatus(str, PyEnum):
 
 
 class FeaturedTier(str, PyEnum):
+    """featured: hero (várias rifas permitidas na API); carousel; none: só listagem /rifas."""
+
     featured = "featured"
     carousel = "carousel"
     none = "none"

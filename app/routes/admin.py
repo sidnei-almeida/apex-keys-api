@@ -216,7 +216,11 @@ async def patch_raffle_featured_tier(
     _admin: User = Depends(get_current_admin),
     session: AsyncSession = Depends(get_session),
 ) -> RafflePublic:
-    """Atualiza só o featured_tier (estrela) — útil para mudar posição na home sem reenviar toda a rifa."""
+    """
+    Atualiza só o featured_tier (estrela).
+    Várias rifas podem estar em `featured` (hero com rotação lenta); não há demissão
+    automática das outras.
+    """
     r_result = await session.execute(
         select(Raffle).where(Raffle.id == raffle_id).with_for_update(),
     )

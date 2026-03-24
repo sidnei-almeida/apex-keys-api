@@ -290,7 +290,10 @@ class AdminRaffleCreate(BaseModel):
     total_tickets: int = Field(..., gt=0)
     featured_tier: FeaturedTierType | None = Field(
         None,
-        description="featured=hero home, carousel=carrossel, none=só em /rifas",
+        description=(
+            "featured=hero home (várias rifas permitidas; ordem pública = created_at asc), "
+            "carousel=carrossel, none=só em /rifas"
+        ),
     )
 
 
@@ -306,7 +309,9 @@ class RaffleUpdate(BaseModel):
     total_tickets: int | None = Field(default=None, gt=0)
     featured_tier: FeaturedTierType | None = Field(
         default=None,
-        description="featured=hero home, carousel=carrossel, none=só em /rifas",
+        description=(
+            "featured=hero home (várias rifas permitidas), carousel=carrossel, none=só em /rifas"
+        ),
     )
 
 
@@ -317,11 +322,13 @@ class RaffleImagePatch(BaseModel):
 
 
 class FeaturedTierPatch(BaseModel):
-    """Atualiza só o featured_tier (posição na home)."""
+    """Atualiza só o featured_tier (posição na home). Várias rifas podem ser `featured`."""
 
     featured_tier: Literal["featured", "carousel", "none"] = Field(
         ...,
-        description="featured=hero home, carousel=carrossel, none=só em /rifas",
+        description=(
+            "featured=hero home (múltiplas permitidas), carousel=carrossel, none=só em /rifas"
+        ),
     )
 
 

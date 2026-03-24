@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import asc, case, desc, func, nulls_last, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +22,32 @@ router = APIRouter()
 _VALID_RAFFLE_STATUS = frozenset(s.value for s in RaffleStatus)
 
 
+def _raffles_public_list_order():
+    """
+    Ordem para a home e catálogos:
+    - `featured` (ouro) primeiro — várias rifas podem ter este tier; entre elas,
+      `created_at` ascendente (a mais antiga = posição 1 no hero / slideshow).
+    - Depois `carousel` (prata), mais recentes primeiro.
+    - Por último `none`, mais recentes primeiro.
+    """
+    tier_rank = case(
+        (Raffle.featured_tier == "featured", 0),
+        (Raffle.featured_tier == "carousel", 1),
+        else_=2,
+    )
+    created_if_featured = case(
+        (Raffle.featured_tier == "featured", Raffle.created_at),
+    )
+    created_if_not_featured = case(
+        (Raffle.featured_tier != "featured", Raffle.created_at),
+    )
+    return (
+        tier_rank,
+        nulls_last(asc(created_if_featured)),
+        nulls_last(desc(created_if_not_featured)),
+    )
+
+
 @router.get("/raffles", response_model=list[RaffleListOut])
 async def list_raffles(
     status_filter: str | None = Query(
@@ -31,10 +57,13 @@ async def list_raffles(
     ),
     session: AsyncSession = Depends(get_session),
 ) -> list[RaffleListOut]:
+    """
+    Lista rifas. Ordem: todas com `featured_tier=featured` primeiro (várias
+    permitidas; ver `_raffles_public_list_order`), depois carousel, depois none.
+    """
+    order = _raffles_public_list_order()
     if status_filter is None:
-        result = await session.execute(
-            select(Raffle).order_by(Raffle.created_at.desc()).limit(100),
-        )
+        result = await session.execute(select(Raffle).order_by(*order).limit(100))
     else:
         s = status_filter.lower().strip()
         if s not in _VALID_RAFFLE_STATUS:
@@ -43,7 +72,7 @@ async def list_raffles(
                 detail="status deve ser active, sold_out, finished ou canceled",
             )
         result = await session.execute(
-            select(Raffle).where(Raffle.status == s).order_by(Raffle.created_at.desc()).limit(100),
+            select(Raffle).where(Raffle.status == s).order_by(*order).limit(100),
         )
     rows = result.scalars().all()
     out = []

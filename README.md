@@ -85,11 +85,12 @@ A documentação interativa OpenAPI fica disponível em `/docs` e `/redoc` quand
 | [`scripts/apply_schema.py`](scripts/apply_schema.py) | Só `create_all` — cria tabelas em falta; **não apaga** dados. |
 | [`scripts/reset_and_apply_schema.py`](scripts/reset_and_apply_schema.py) | `drop_all` + `create_all` — **apaga toda a base**; depois corre [`create_admin.py`](scripts/create_admin.py) para o primeiro admin. |
 | [`scripts/schema_reset.sql`](scripts/schema_reset.sql) | Alternativa `psql`: `DROP TABLE` das quatro tabelas; depois `apply_schema.py` ou API. |
-| [`scripts/create_admin.py`](scripts/create_admin.py) | Cria ou actualiza **um** admin (edita e-mail/senha/WhatsApp no ficheiro). |
+| [`scripts/create_admin.py`](scripts/create_admin.py) | Cria ou actualiza **um** admin via variáveis `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_WHATSAPP` (env ou `.env`). |
 | [`scripts/seed_test_data.py`](scripts/seed_test_data.py) | Opcional dev: dois utilizadores `.example.com` (admin + user de teste). |
+| [`scripts/seed_bulk_raffles.py`](scripts/seed_bulk_raffles.py) | Rifas em massa: catálogo em **`scripts/bulk_raffles_catalog.local.json`** (gitignored; se não existir usa `bulk_raffles_catalog.json`). Modelo: [`bulk_raffles_catalog.example.json`](scripts/bulk_raffles_catalog.example.json). |
 | [`scripts/test_endpoints.py`](scripts/test_endpoints.py) | Smoke test HTTP contra `http://localhost:8000`. |
 
-**Base nova + primeiro admin:** `python scripts/reset_and_apply_schema.py` → edita e corre `python scripts/create_admin.py`.
+**Base nova + primeiro admin:** `python scripts/reset_and_apply_schema.py` → define `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_WHATSAPP` no ambiente (ou `.env`) e corre `python scripts/create_admin.py`.
 
 Carregamento de `.env` na raiz é partilhado por `dev.py` e pelos scripts via [`app/dotenv_loader.py`](app/dotenv_loader.py).
 

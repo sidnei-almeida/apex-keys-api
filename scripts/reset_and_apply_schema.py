@@ -11,7 +11,7 @@ Uso:
   python scripts/reset_and_apply_schema.py
 
 Depois, para o primeiro administrador (sem API pública de promoção):
-  1. Edita scripts/create_admin.py (e-mail, senha, WhatsApp)
+  1. Define ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_WHATSAPP (env ou .env)
   2. python scripts/create_admin.py
 
 Requer DATABASE_URL no .env (ou ambiente). Mesma lógica SSL que app/database.py.
@@ -54,4 +54,4 @@ if __name__ == "__main__":
         print(f"Erro: {e}", file=sys.stderr)
         sys.exit(1)
     print("DB limpo e esquema reaplicado (models actuais).")
-    print("Próximo passo: edita scripts/create_admin.py e corre: python scripts/create_admin.py")
+    print("Próximo passo: define ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_WHATSAPP e corre: python scripts/create_admin.py")

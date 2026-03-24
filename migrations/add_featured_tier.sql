@@ -1,5 +1,5 @@
 -- Adiciona coluna featured_tier à tabela raffles
--- featured = hero no topo da home, carousel = carrossel, none = só em /rifas
+-- featured = hero no topo (várias rifas permitidas; ver ordenação em GET /raffles), carousel = carrossel, none = só em /rifas
 --
 -- Aplicar: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/add_featured_tier.sql
 

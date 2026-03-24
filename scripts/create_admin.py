@@ -4,8 +4,11 @@ Cria ou actualiza um utilizador administrador (bcrypt igual à API).
 
 Fluxo típico após base limpa:
   1. python scripts/reset_and_apply_schema.py
-  2. Edita CONFIG abaixo
+  2. Define variáveis de ambiente (recomendado) ou edita os defaults abaixo
   3. python scripts/create_admin.py
+
+Variáveis de ambiente (têm prioridade sobre os defaults do ficheiro):
+  ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_FULL_NAME, ADMIN_WHATSAPP
 
 Se o e-mail já existir: is_admin=True e senha reposta.
 """
@@ -13,6 +16,7 @@ Se o e-mail já existir: is_admin=True e senha reposta.
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -22,12 +26,14 @@ if str(_ROOT) not in sys.path:
 
 from app.dotenv_loader import load_dotenv
 
-# --- CONFIG: edita antes de correr --------------------------------------
+load_dotenv()
 
-ADMIN_EMAIL = "sidnei.almeida1806@gmail.com"
-ADMIN_PASSWORD = "Sidnei#1993@Apuculacata#321698"
-ADMIN_FULL_NAME = "Administrador"
-ADMIN_WHATSAPP = "+5554991746969"
+# --- Defaults (sobrescreve com variáveis de ambiente ou entradas no .env) ---
+
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip() or "admin@teu-dominio.com"
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "").strip() or "altera-esta-senha-forte"
+ADMIN_FULL_NAME = os.environ.get("ADMIN_FULL_NAME", "").strip() or "Administrador"
+ADMIN_WHATSAPP = os.environ.get("ADMIN_WHATSAPP", "").strip() or ""
 
 # ----------------------------------------------------------------------
 
@@ -43,7 +49,6 @@ def _config_ok() -> bool:
 
 
 async def _main() -> None:
-    load_dotenv()
     from decimal import Decimal
 
     from sqlalchemy import select
@@ -55,7 +60,8 @@ async def _main() -> None:
 
     if not _config_ok():
         print(
-            "Erro: edita ADMIN_EMAIL, ADMIN_PASSWORD e ADMIN_WHATSAPP no topo de scripts/create_admin.py.",
+            "Erro: define ADMIN_EMAIL, ADMIN_PASSWORD e ADMIN_WHATSAPP "
+            "(variáveis de ambiente ou edita os defaults em scripts/create_admin.py).",
             file=sys.stderr,
         )
         sys.exit(1)

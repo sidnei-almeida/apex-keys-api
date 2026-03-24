@@ -1,5 +1,7 @@
 .env
 .env.local
+# Catálogo com URLs reais — não apagar com merges / assistente
+scripts/bulk_raffles_catalog.local.json
 .venv/
 venv/
 __pycache__/
