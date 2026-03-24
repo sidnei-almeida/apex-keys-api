@@ -113,6 +113,17 @@ class TransactionOut(BaseModel):
     created_at: datetime
 
 
+class NotificationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    type: str
+    title: str
+    body: str
+    read_at: datetime | None
+    created_at: datetime
+
+
 class TicketPurchaseRequest(BaseModel):
     raffle_id: UUID
     ticket_number: int = Field(..., ge=1)
@@ -137,6 +148,30 @@ class RafflePublic(BaseModel):
     total_tickets: int
     ticket_price: Decimal
     status: Literal["active", "sold_out", "finished", "canceled"]
+    created_at: datetime
+
+
+class RaffleListOut(RafflePublic):
+    """RafflePublic + quantidade de bilhetes vendidos (para listagem pública)."""
+
+    sold: int = 0
+
+
+class RaffleDetailOut(RaffleListOut):
+    """RaffleListOut + lista de números vendidos (para página de participação)."""
+
+    sold_numbers: list[int] = Field(default_factory=list)
+
+
+class MyTicketOut(BaseModel):
+    """Bilhete do usuário com dados da rifa."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    ticket_id: UUID
+    raffle_id: UUID
+    ticket_number: int
+    raffle: RafflePublic
     created_at: datetime
 
 

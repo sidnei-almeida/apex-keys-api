@@ -30,6 +30,18 @@ class Settings(BaseSettings):
         default=2,
         description="Tentativas extras se pedido falhar ou HTML vier vazio/desafio (total = 1 + este valor)",
     )
+    resend_api_key: str | None = Field(
+        default=None,
+        description="API key do Resend para envio de emails. Se vazio, emails não são enviados.",
+    )
+    email_from: str = Field(
+        default="noreply@apexkeys.com",
+        description="Email remetente (domínio verificado no Resend)",
+    )
+    frontend_url: str = Field(
+        default="",
+        description="URL base do frontend para links em emails (ex: https://apexkeys.com)",
+    )
 
     def cors_origin_list(self) -> list[str]:
         """
