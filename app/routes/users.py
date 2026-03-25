@@ -12,7 +12,7 @@ from app.deps import get_session
 from app.models import Notification, Raffle, RaffleStatus, Ticket, User
 from app.schemas import MyTicketOut, NotificationOut, RafflePublic, UserProfileUpdate, UserPublic
 from app.security import get_current_user_id
-from app.uploadthing_client import get_uploadthing_api_key_from_env, upload_bytes_to_uploadthing
+from app.uploadthing_client import get_uploadthing_credentials_from_env, upload_bytes_to_uploadthing
 
 router = APIRouter()
 
@@ -233,11 +233,13 @@ async def upload_avatar(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuário não encontrado")
 
     filename = f"{user_id}.webp"
-    api_key = get_uploadthing_api_key_from_env()
-    if api_key:
+    creds = get_uploadthing_credentials_from_env()
+    if creds:
+        api_key, token_raw = creds
         try:
             url = await upload_bytes_to_uploadthing(
                 api_key=api_key,
+                token_raw=token_raw or None,
                 filename=filename,
                 content_type="image/webp",
                 data=webp_bytes,

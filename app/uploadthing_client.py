@@ -24,20 +24,30 @@ def _decode_uploadthing_token(token: str) -> dict[str, Any]:
         raise ValueError("UPLOADTHING_TOKEN inválido") from e
 
 
-def get_uploadthing_api_key_from_env() -> str | None:
-    token = os.getenv("UPLOADTHING_TOKEN", "").strip()
-    if not token:
+def get_uploadthing_credentials_from_env() -> tuple[str, str] | None:
+    """
+    Retorna (api_key, token_raw).
+    - Preferimos `UPLOADTHING_SECRET` (legacy / v6) quando presente, pois a REST v6 usa `X-Uploadthing-Api-Key: sk_...`.
+    - Caso contrário, extraímos a apiKey de `UPLOADTHING_TOKEN` (v7+ base64 JSON).
+    `token_raw` é mantido apenas como fallback para stacks que esperem Authorization Bearer.
+    """
+    legacy = os.getenv("UPLOADTHING_SECRET", "").strip().strip("'").strip('"')
+    if legacy:
+        return legacy, ""
+    token_raw = os.getenv("UPLOADTHING_TOKEN", "").strip()
+    if not token_raw:
         return None
-    obj = _decode_uploadthing_token(token)
+    obj = _decode_uploadthing_token(token_raw)
     api_key = obj.get("apiKey")
     if not isinstance(api_key, str) or not api_key.strip():
         raise ValueError("UPLOADTHING_TOKEN sem apiKey")
-    return api_key.strip()
+    return api_key.strip(), token_raw.strip().strip("'").strip('"')
 
 
 async def upload_bytes_to_uploadthing(
     *,
     api_key: str,
+    token_raw: str | None = None,
     filename: str,
     content_type: str,
     data: bytes,
@@ -48,7 +58,16 @@ async def upload_bytes_to_uploadthing(
     2) POST para o bucket S3 com fields + file
     Retorna a URL pública (utfs).
     """
-    headers = {"X-Uploadthing-Api-Key": api_key, "Content-Type": "application/json"}
+    def _headers(mode: str) -> dict[str, str]:
+        # mode=api_key (clássico) ou bearer (fallback)
+        h: dict[str, str] = {"Content-Type": "application/json"}
+        if mode == "api_key":
+            h["X-Uploadthing-Api-Key"] = api_key
+        elif mode == "bearer" and token_raw:
+            h["Authorization"] = f"Bearer {token_raw}"
+        else:
+            h["X-Uploadthing-Api-Key"] = api_key
+        return h
     payload = {
         "contentDisposition": "inline",
         "acl": "public-read",
@@ -56,7 +75,18 @@ async def upload_bytes_to_uploadthing(
     }
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        pres = await client.post("https://api.uploadthing.com/v6/uploadFiles", headers=headers, json=payload)
+        pres = await client.post(
+            "https://api.uploadthing.com/v6/uploadFiles",
+            headers=_headers("api_key"),
+            json=payload,
+        )
+        # Alguns ambientes podem exigir token Bearer em vez da API key no header.
+        if pres.status_code in (400, 401, 403) and token_raw:
+            pres = await client.post(
+                "https://api.uploadthing.com/v6/uploadFiles",
+                headers=_headers("bearer"),
+                json=payload,
+            )
         pres.raise_for_status()
         j = pres.json()
         item = (j.get("data") or [None])[0]
