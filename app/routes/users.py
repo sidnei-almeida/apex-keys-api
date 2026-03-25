@@ -1,47 +1,18 @@
-import os
 from datetime import UTC, datetime, timedelta, timezone
-from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.avatar_image import AVATAR_MAX_BYTES, image_bytes_to_webp_avatar_under_limit
 from app.deps import get_session
 from app.models import Notification, Raffle, RaffleStatus, Ticket, User
-from app.schemas import MyTicketOut, NotificationOut, RafflePublic, UserProfileUpdate, UserPublic
+from app.schemas import AvatarUpdate, MyTicketOut, NotificationOut, RafflePublic, UserProfileUpdate, UserPublic
 from app.security import get_current_user_id
-from app.uploadthing_client import get_uploadthing_credentials_from_env, upload_bytes_to_uploadthing
 
 router = APIRouter()
 
-# Limite do ficheiro original no upload (pode ser foto gigapixel); depois virá WebP otimizado.
-AVATAR_UPLOAD_MAX_BYTES = 20 * 1024 * 1024  # 20MB
-AVATAR_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 ACCOUNT_DELETE_GRACE_DAYS = 30
-
-
-def _upload_dir() -> Path:
-    base = Path(os.getenv("UPLOAD_DIR", "uploads"))
-    avatars = base / "avatars"
-    avatars.mkdir(parents=True, exist_ok=True)
-    return avatars
-
-
-def _avatar_url(filename: str) -> str:
-    """Retorna o path público do avatar (ex.: /uploads/avatars/{uuid}.webp)."""
-    return f"/uploads/avatars/{filename}"
-
-
-def _remove_previous_avatar_files(upload_dir: Path, user_id: UUID) -> None:
-    """Remove avatares antigos deste utilizador (outras extensões antes da pipeline WebP)."""
-    prefix = str(user_id)
-    for p in upload_dir.glob(f"{prefix}.*"):
-        try:
-            p.unlink()
-        except OSError:
-            pass
 
 
 @router.get("/me/tickets", response_model=list[MyTicketOut])
@@ -193,70 +164,18 @@ async def update_me(
     return UserPublic.model_validate(user)
 
 
-@router.post("/me/avatar", response_model=UserPublic)
-async def upload_avatar(
-    file: UploadFile = File(...),
+@router.patch("/me/avatar", response_model=UserPublic)
+async def update_my_avatar(
+    body: AvatarUpdate,
     user_id: UUID = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_session),
 ) -> UserPublic:
-    ext = Path(file.filename or "").suffix.lower()
-    if ext not in AVATAR_ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Formato inválido. Use: {', '.join(AVATAR_ALLOWED_EXTENSIONS)}",
-        )
-
-    content = await file.read()
-    if len(content) > AVATAR_UPLOAD_MAX_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Arquivo muito grande. Máximo: {AVATAR_UPLOAD_MAX_BYTES // (1024 * 1024)}MB antes da otimização.",
-        )
-
-    try:
-        webp_bytes = image_bytes_to_webp_avatar_under_limit(content, max_bytes=AVATAR_MAX_BYTES)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        ) from e
-
-    if len(webp_bytes) > AVATAR_MAX_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Não foi possível otimizar a imagem para ≤ 50KB. Tente outra foto.",
-        )
-
     result = await session.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuário não encontrado")
 
-    filename = f"{user_id}.webp"
-    creds = get_uploadthing_credentials_from_env()
-    if creds:
-        api_key, token_raw = creds
-        try:
-            url = await upload_bytes_to_uploadthing(
-                api_key=api_key,
-                token_raw=token_raw or None,
-                filename=filename,
-                content_type="image/webp",
-                data=webp_bytes,
-            )
-        except Exception:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Falha ao enviar avatar ao provedor (UploadThing).",
-            ) from None
-        user.avatar_url = url
-    else:
-        upload_dir = _upload_dir()
-        _remove_previous_avatar_files(upload_dir, user_id)
-        filepath = upload_dir / filename
-        with open(filepath, "wb") as f:
-            f.write(webp_bytes)
-        user.avatar_url = _avatar_url(filename)
+    user.avatar_url = str(body.avatar_url)
     await session.flush()
     await session.refresh(user)
     return UserPublic.model_validate(user)

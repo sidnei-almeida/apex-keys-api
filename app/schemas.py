@@ -5,6 +5,7 @@ from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import HttpUrl
 
 
 def _validate_pix_key(v: str | None) -> str | None:
@@ -97,6 +98,12 @@ class UserProfileUpdate(BaseModel):
         if v is not None and v.strip():
             return _validate_pix_key(v)
         return None
+
+
+class AvatarUpdate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    avatar_url: HttpUrl
 
 
 class WalletBalanceResponse(BaseModel):
