@@ -6,9 +6,11 @@ import os
 import ssl
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import get_settings
+from app.account_deletion import purge_due_deletions
 from app.models import Base
 
 logger = logging.getLogger("apex_keys")
@@ -151,7 +153,34 @@ async def init_db() -> None:
             async_session_maker = async_sessionmaker(eng, class_=AsyncSession, expire_on_commit=False)
             async with eng.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
+                # Migração leve (sem Alembic): garantir colunas para desativação/exclusão agendada.
+                await conn.execute(
+                    text(
+                        "ALTER TABLE IF EXISTS users "
+                        "ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMPTZ NULL",
+                    ),
+                )
+                await conn.execute(
+                    text(
+                        "ALTER TABLE IF EXISTS users "
+                        "ADD COLUMN IF NOT EXISTS delete_after TIMESTAMPTZ NULL",
+                    ),
+                )
+                await conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_users_delete_after ON users (delete_after)",
+                    ),
+                )
             _engine = eng
+            # Purge de contas vencidas (30 dias) no arranque.
+            try:
+                async with async_session_maker() as s:
+                    n = await purge_due_deletions(s)
+                    if n:
+                        await s.commit()
+                        logger.info("Purge de contas: %s utilizador(es) removido(s).", n)
+            except Exception as e:
+                logger.warning("Falha ao purgar contas vencidas: %s", e)
             if attempt > 1:
                 logger.info("Base de dados disponível após %s tentativas.", attempt)
             return

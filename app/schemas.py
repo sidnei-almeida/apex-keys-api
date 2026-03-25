@@ -78,6 +78,8 @@ class UserPublic(BaseModel):
     is_admin: bool
     balance: Decimal
     created_at: datetime
+    deactivated_at: datetime | None = None
+    delete_after: datetime | None = None
 
 
 class UserProfileUpdate(BaseModel):

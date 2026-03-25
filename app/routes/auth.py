@@ -9,6 +9,7 @@ from app.deps import get_session
 from app.models import User
 from app.schemas import TokenResponse, UserLogin, UserPublic, UserSignup
 from app.security import create_access_token, get_current_user_id, hash_password, verify_password
+from app.account_deletion import purge_due_deletions
 
 router = APIRouter()
 
@@ -42,6 +43,8 @@ async def signup(body: UserSignup, session: AsyncSession = Depends(get_session))
 
 @router.post("/login", response_model=TokenResponse)
 async def login(body: UserLogin, session: AsyncSession = Depends(get_session)) -> TokenResponse:
+    # Purga leve para não manter contas vencidas indefinidamente.
+    await purge_due_deletions(session)
     result = await session.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
     if user is None or not verify_password(body.password, user.password_hash):
@@ -58,6 +61,7 @@ async def me(
     user_id: UUID = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_session),
 ) -> UserPublic:
+    await purge_due_deletions(session)
     result = await session.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if user is None:

@@ -42,6 +42,9 @@ class User(Base):
     balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Desativação / exclusão agendada (30 dias)
+    deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    delete_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
     tickets: Mapped[list["Ticket"]] = relationship(back_populates="user")
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="user")

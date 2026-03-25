@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID
 
@@ -7,17 +7,19 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.avatar_image import image_bytes_to_webp_avatar
+from app.avatar_image import AVATAR_MAX_BYTES, image_bytes_to_webp_avatar_under_limit
 from app.deps import get_session
 from app.models import Notification, Raffle, RaffleStatus, Ticket, User
 from app.schemas import MyTicketOut, NotificationOut, RafflePublic, UserProfileUpdate, UserPublic
 from app.security import get_current_user_id
+from app.uploadthing_client import get_uploadthing_api_key_from_env, upload_bytes_to_uploadthing
 
 router = APIRouter()
 
-# Limite do ficheiro original no upload (pode ser foto gigapixel); depois virá WebP ~384px.
+# Limite do ficheiro original no upload (pode ser foto gigapixel); depois virá WebP otimizado.
 AVATAR_UPLOAD_MAX_BYTES = 20 * 1024 * 1024  # 20MB
 AVATAR_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+ACCOUNT_DELETE_GRACE_DAYS = 30
 
 
 def _upload_dir() -> Path:
@@ -212,26 +214,82 @@ async def upload_avatar(
         )
 
     try:
-        webp_bytes = image_bytes_to_webp_avatar(content)
+        webp_bytes = image_bytes_to_webp_avatar_under_limit(content, max_bytes=AVATAR_MAX_BYTES)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         ) from e
 
+    if len(webp_bytes) > AVATAR_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Não foi possível otimizar a imagem para ≤ 50KB. Tente outra foto.",
+        )
+
     result = await session.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuário não encontrado")
 
-    upload_dir = _upload_dir()
-    _remove_previous_avatar_files(upload_dir, user_id)
     filename = f"{user_id}.webp"
-    filepath = upload_dir / filename
-    with open(filepath, "wb") as f:
-        f.write(webp_bytes)
+    api_key = get_uploadthing_api_key_from_env()
+    if api_key:
+        try:
+            url = await upload_bytes_to_uploadthing(
+                api_key=api_key,
+                filename=filename,
+                content_type="image/webp",
+                data=webp_bytes,
+            )
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Falha ao enviar avatar ao provedor (UploadThing).",
+            ) from None
+        user.avatar_url = url
+    else:
+        upload_dir = _upload_dir()
+        _remove_previous_avatar_files(upload_dir, user_id)
+        filepath = upload_dir / filename
+        with open(filepath, "wb") as f:
+            f.write(webp_bytes)
+        user.avatar_url = _avatar_url(filename)
+    await session.flush()
+    await session.refresh(user)
+    return UserPublic.model_validate(user)
 
-    user.avatar_url = _avatar_url(filename)
+
+@router.post("/me/deactivate", response_model=UserPublic)
+async def deactivate_me(
+    user_id: UUID = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_session),
+) -> UserPublic:
+    result = await session.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuário não encontrado")
+
+    now = datetime.now(UTC)
+    user.deactivated_at = now
+    user.delete_after = now + timedelta(days=ACCOUNT_DELETE_GRACE_DAYS)
+    await session.flush()
+    await session.refresh(user)
+    return UserPublic.model_validate(user)
+
+
+@router.post("/me/reactivate", response_model=UserPublic)
+async def reactivate_me(
+    user_id: UUID = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_session),
+) -> UserPublic:
+    result = await session.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuário não encontrado")
+
+    user.deactivated_at = None
+    user.delete_after = None
     await session.flush()
     await session.refresh(user)
     return UserPublic.model_validate(user)
