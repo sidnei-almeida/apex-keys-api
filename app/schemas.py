@@ -425,6 +425,14 @@ class PixDepositCreate(BaseModel):
     gateway_reference: str = Field(..., min_length=1, max_length=255)
 
 
+class PixDepositAbandon(BaseModel):
+    """Utilizador fechou o modal de depósito (parar de aguardar)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    gateway_reference: str = Field(..., min_length=1, max_length=255)
+
+
 class MercadoPagoWebhookPayload(BaseModel):
     """Mock do payload essencial do Mercado Pago."""
 

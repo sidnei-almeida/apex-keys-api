@@ -13,7 +13,7 @@ from app.mercado_pago_service import (
     extract_pix_qr_from_payment,
 )
 from app.models import Transaction, User
-from app.schemas import PixDepositCreate, TransactionOut, WalletBalanceResponse
+from app.schemas import PixDepositAbandon, PixDepositCreate, TransactionOut, WalletBalanceResponse
 from app.security import get_current_user_id
 from app.utils import mock_pix_qr_payload
 
@@ -148,3 +148,44 @@ async def create_mock_pix_intent(
         "mercado_pago": None,
         "mock_pix": qr,
     }
+
+
+@router.post("/abandon-pix-deposit", status_code=status.HTTP_200_OK)
+async def abandon_pix_deposit(
+    body: PixDepositAbandon,
+    user_id: UUID = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, str]:
+    """
+    Marca um `pix_deposit` pendente como cancelado quando o utilizador para de aguardar no UI.
+    O webhook do Mercado Pago ignora crédito se a linha já não estiver `pending`.
+    """
+    ref = body.gateway_reference.strip()
+    tr_result = await session.execute(
+        select(Transaction)
+        .where(
+            Transaction.user_id == user_id,
+            Transaction.gateway_reference == ref,
+            Transaction.type == "pix_deposit",
+        )
+        .with_for_update(),
+    )
+    row = tr_result.scalar_one_or_none()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Transação não encontrada",
+        )
+    if row.status != "pending":
+        return {"message": "Transação já não está pendente", "status": row.status}
+
+    row.status = "canceled"
+    extra = " | Desistência (parar de aguardar)"
+    row.description = ((row.description or "") + extra)[:500]
+    await session.commit()
+    logger.info(
+        "[wallet] abandon-pix-deposit user_id=%s ref=%s",
+        user_id,
+        ref[:48],
+    )
+    return {"message": "Depósito cancelado", "status": "canceled"}
