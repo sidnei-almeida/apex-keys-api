@@ -14,6 +14,7 @@ from app.schemas import (
     RaffleDetailOut,
     RaffleListOut,
     RafflePublic,
+    RecentPurchasePulseOut,
     TicketPurchaseRequest,
     TicketPurchaseResponse,
 )
@@ -22,6 +23,18 @@ from app.security import get_current_user_id
 router = APIRouter()
 
 _VALID_RAFFLE_STATUS = frozenset(s.value for s in RaffleStatus)
+
+
+def _mask_display_name_for_pulse(full_name: str) -> str:
+    """Primeiro nome + inicial do último sobrenome (ex.: Maria S.)."""
+    parts = full_name.strip().split()
+    if not parts:
+        return "Alguém"
+    if len(parts) == 1:
+        return parts[0][:80]
+    first, last = parts[0], parts[-1]
+    initial = (last[0].upper() + ".") if last else ""
+    return f"{first} {initial}".strip()
 
 
 def _raffles_public_list_order():
@@ -123,6 +136,61 @@ async def hall_of_fame(
                     image_url=raffle.image_url,
                     winning_ticket_number=raffle.winning_ticket_number,
                 ),
+            ),
+        )
+    return out
+
+
+@router.get("/recent-purchase-pulses", response_model=list[RecentPurchasePulseOut])
+async def recent_purchase_pulses(
+    limit: int = Query(24, ge=1, le=50, description="Máximo de eventos recentes"),
+    session: AsyncSession = Depends(get_session),
+) -> list[RecentPurchasePulseOut]:
+    """
+    Bilhetes pagos agrupados por utilizador, rifa e minuto (UTC), para prova social na home.
+    O nome é parcial por privacidade.
+    """
+    minute_bucket = func.date_trunc("minute", Ticket.created_at)
+    stmt = (
+        select(
+            Ticket.user_id,
+            Ticket.raffle_id,
+            minute_bucket.label("bucket"),
+            func.count().label("qty"),
+            func.max(Ticket.created_at).label("purchased_at"),
+            User.full_name,
+            Raffle.title,
+        )
+        .join(User, User.id == Ticket.user_id)
+        .join(Raffle, Raffle.id == Ticket.raffle_id)
+        .where(Ticket.status == "paid")
+        .group_by(
+            Ticket.user_id,
+            Ticket.raffle_id,
+            minute_bucket,
+            User.full_name,
+            Raffle.title,
+        )
+        .order_by(desc(func.max(Ticket.created_at)))
+        .limit(limit)
+    )
+    result = await session.execute(stmt)
+    rows = result.all()
+    out: list[RecentPurchasePulseOut] = []
+    for row in rows:
+        uid, rid, bucket, qty, p_at, fname, rtitle = row
+        q = int(qty or 0)
+        if q < 1 or p_at is None:
+            continue
+        bucket_key = bucket.isoformat() if hasattr(bucket, "isoformat") else str(bucket)
+        pulse_id = f"{uid}-{rid}-{bucket_key}"
+        out.append(
+            RecentPurchasePulseOut(
+                id=pulse_id,
+                display_name=_mask_display_name_for_pulse(fname or ""),
+                quantity=q,
+                raffle_title=(rtitle or "Sorteio")[:200],
+                purchased_at=p_at,
             ),
         )
     return out

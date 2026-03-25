@@ -296,6 +296,16 @@ class HallOfFameEntryOut(BaseModel):
     spotlight: HallOfFameSpotlightRaffle
 
 
+class RecentPurchasePulseOut(BaseModel):
+    """Compra agregada para prova social (nome parcial, sem e-mail)."""
+
+    id: str
+    display_name: str
+    quantity: int = Field(..., ge=1)
+    raffle_title: str
+    purchased_at: datetime
+
+
 class AdminWalletAdjust(BaseModel):
     """Ajuste manual de saldo (admin)."""
 
