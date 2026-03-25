@@ -478,6 +478,21 @@ async def delete_raffle(
     return RaffleDeleteResponse(raffle_id=raffle_id, tickets_removed=tickets_removed)
 
 
+def _archived_raffle_payment_channel(tx: Transaction) -> str:
+    """Canal de auditoria para `raffle_payment` finalizado (QG)."""
+    snap = tx.raffle_checkout_snapshot if isinstance(tx.raffle_checkout_snapshot, dict) else {}
+    ch = snap.get("payment_channel")
+    if ch == "wallet":
+        return "wallet"
+    if ch == "pix_mp_wallet":
+        return "pix_mp_wallet"
+    if ch in ("pix_mp", "pix"):
+        return "pix_mp"
+    if (tx.gateway_reference or "").strip():
+        return "pix_mp"
+    return "none"
+
+
 @router.get("/reservations", response_model=AdminReservationsListOut)
 async def admin_list_pending_reservations(
     _admin: User = Depends(get_current_admin),
@@ -517,7 +532,7 @@ async def admin_list_pending_reservations(
         if tx is None:
             channel = "wallet_pending"
         elif tx.status == "pending":
-            channel = "pix"
+            channel = "pix_mp"
         else:
             channel = "none"
         created_at = min(x[0].created_at for x in items)
@@ -565,7 +580,7 @@ async def admin_list_pending_reservations(
             except ValueError:
                 raffle_uuid = None
         title = snap.get("raffle_title") if isinstance(snap.get("raffle_title"), str) else "—"
-        channel_arch = "pix" if (tx.gateway_reference or "").strip() else "none"
+        channel_arch = _archived_raffle_payment_channel(tx)
         archived.append(
             AdminReservationRowOut(
                 row_kind="archived",

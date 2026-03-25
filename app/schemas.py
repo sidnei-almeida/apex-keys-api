@@ -191,7 +191,14 @@ class AdminReservationRowOut(BaseModel):
         None,
         description="Só active: fim da janela de 15 min antes da expiração automática",
     )
-    payment_channel: Literal["pix", "wallet_pending", "none"]
+    payment_channel: Literal[
+        "pix",
+        "pix_mp",
+        "wallet",
+        "wallet_pending",
+        "none",
+        "pix_mp_wallet",
+    ]
     transaction_id: UUID | None = None
     transaction_status: Literal["pending", "completed", "failed", "canceled"] | None = None
     gateway_reference: str | None = None

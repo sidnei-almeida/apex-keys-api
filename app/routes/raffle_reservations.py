@@ -173,6 +173,30 @@ async def complete_reservation_wallet(
             detail="Saldo insuficiente na carteira",
         )
 
+    nums = sorted(t.ticket_number for t in tickets)
+    snap = {
+        "raffle_id": str(raffle.id),
+        "raffle_title": raffle.title,
+        "ticket_numbers": nums,
+        "payment_channel": "wallet",
+    }
+    nums_preview = ", ".join(str(n) for n in nums[:12])
+    if len(nums) > 12:
+        nums_preview += "…"
+    desc = f"Rifa: {raffle.title} — números {nums_preview}"
+    session.add(
+        Transaction(
+            user_id=user_id,
+            amount=total,
+            type="raffle_payment",
+            status="completed",
+            gateway_reference=None,
+            description=f"{desc[:450]} [Canal: carteira]",
+            payment_hold_id=hold_id,
+            raffle_checkout_snapshot=snap,
+        ),
+    )
+
     user.balance = user.balance - total
     await finalize_hold_as_paid(session, hold_id, mark_raffle_payment_tx_id=None)
     await session.commit()
@@ -256,6 +280,7 @@ async def create_reservation_pix_intent(
         "raffle_id": str(raffle.id),
         "raffle_title": raffle.title,
         "ticket_numbers": sorted(t.ticket_number for t in tickets),
+        "payment_channel": "pix_mp",
     }
     tr = Transaction(
         user_id=user_id,
