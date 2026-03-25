@@ -217,6 +217,8 @@ class RafflePublic(BaseModel):
     ticket_price: Decimal
     status: Literal["active", "sold_out", "finished", "canceled"]
     featured_tier: FeaturedTierType | None = None
+    winning_ticket_number: int | None = None
+    drawn_at: datetime | None = None
     created_at: datetime
 
 
@@ -264,6 +266,34 @@ class RaffleDeleteResponse(BaseModel):
 
     raffle_id: UUID
     tickets_removed: int
+
+
+class RaffleDrawRequest(BaseModel):
+    """Regista o bilhete vencedor e encerra a rifa (`finished`)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    winning_ticket_number: int = Field(..., ge=1, description="Número do bilhete pago que ganhou o sorteio")
+
+
+class HallOfFameSpotlightRaffle(BaseModel):
+    """Rifa de destaque no cartão (ex.: última vitória do utilizador)."""
+
+    raffle_id: UUID
+    title: str
+    image_url: str | None = None
+    winning_ticket_number: int
+
+
+class HallOfFameEntryOut(BaseModel):
+    """Uma posição no ranking (1 = campeão)."""
+
+    rank: int = Field(..., ge=1, le=5)
+    user_id: UUID
+    full_name: str
+    avatar_url: str | None = None
+    wins: int = Field(..., ge=1)
+    spotlight: HallOfFameSpotlightRaffle
 
 
 class AdminWalletAdjust(BaseModel):

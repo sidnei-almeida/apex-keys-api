@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS raffles (
     ticket_price NUMERIC(12, 2) NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'active',
     featured_tier VARCHAR(20) DEFAULT 'none',
+    winning_ticket_number INTEGER,
+    drawn_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

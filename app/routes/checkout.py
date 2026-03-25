@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import asc, case, desc, func, nulls_last, select
+from sqlalchemy import and_, asc, case, desc, func, nulls_last, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +9,8 @@ from app.deps import get_session
 from app.models import Raffle, RaffleStatus, Ticket, Transaction, User
 from app.reservation_service import expire_stale_pending_reservations
 from app.schemas import (
+    HallOfFameEntryOut,
+    HallOfFameSpotlightRaffle,
     RaffleDetailOut,
     RaffleListOut,
     RafflePublic,
@@ -46,6 +48,84 @@ def _raffles_public_list_order():
         nulls_last(asc(created_if_featured)),
         nulls_last(desc(created_if_not_featured)),
     )
+
+
+@router.get("/raffles/hall-of-fame", response_model=list[HallOfFameEntryOut])
+async def hall_of_fame(
+    session: AsyncSession = Depends(get_session),
+) -> list[HallOfFameEntryOut]:
+    """
+    Top 5 utilizadores por número de rifas ganhas (rifas `finished` com bilhete vencedor pago).
+    Inclui dados de destaque da vitória mais recente para os cartões do Hall.
+    """
+    win_count = func.count().label("win_count")
+    top_stmt = (
+        select(Ticket.user_id, win_count)
+        .join(Raffle, Raffle.id == Ticket.raffle_id)
+        .where(
+            Raffle.status == RaffleStatus.finished.value,
+            Raffle.winning_ticket_number.isnot(None),
+            Raffle.winning_ticket_number == Ticket.ticket_number,
+            Ticket.status == "paid",
+        )
+        .group_by(Ticket.user_id)
+        .order_by(win_count.desc())
+        .limit(5)
+    )
+    top_result = await session.execute(top_stmt)
+    top_rows = top_result.all()
+    if not top_rows:
+        return []
+
+    user_ids = [row[0] for row in top_rows]
+    users_r = await session.execute(select(User).where(User.id.in_(user_ids)))
+    users_by_id = {u.id: u for u in users_r.scalars().all()}
+
+    out: list[HallOfFameEntryOut] = []
+    rank = 0
+    for row in top_rows:
+        uid, wins = row[0], int(row[1] or 0)
+        user = users_by_id.get(uid)
+        if user is None or wins < 1:
+            continue
+        spot_r = await session.execute(
+            select(Raffle)
+            .join(
+                Ticket,
+                and_(
+                    Ticket.raffle_id == Raffle.id,
+                    Ticket.user_id == uid,
+                    Ticket.status == "paid",
+                    Ticket.ticket_number == Raffle.winning_ticket_number,
+                ),
+            )
+            .where(
+                Raffle.status == RaffleStatus.finished.value,
+                Raffle.winning_ticket_number.isnot(None),
+            )
+            .order_by(nulls_last(desc(Raffle.drawn_at)), desc(Raffle.created_at))
+            .limit(1),
+        )
+        raffle = spot_r.scalar_one_or_none()
+        if raffle is None or raffle.winning_ticket_number is None:
+            continue
+        rank += 1
+        out.append(
+            HallOfFameEntryOut(
+                rank=rank,
+                user_id=user.id,
+                full_name=user.full_name,
+                avatar_url=user.avatar_url,
+                wins=wins,
+                spotlight=HallOfFameSpotlightRaffle(
+                    raffle_id=raffle.id,
+                    title=raffle.title,
+                    image_url=raffle.image_url,
+                    winning_ticket_number=raffle.winning_ticket_number,
+                ),
+            ),
+        )
+    return out
 
 
 @router.get("/raffles", response_model=list[RaffleListOut])

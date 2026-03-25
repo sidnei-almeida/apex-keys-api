@@ -67,6 +67,8 @@ class Raffle(Base):
         nullable=True,
         default=FeaturedTier.none.value,
     )
+    winning_ticket_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    drawn_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     tickets: Mapped[list["Ticket"]] = relationship(back_populates="raffle")

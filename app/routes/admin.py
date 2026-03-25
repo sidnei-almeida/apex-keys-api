@@ -30,6 +30,7 @@ from app.schemas import (
     FeaturedTierPatch,
     RaffleCancelResponse,
     RaffleDeleteResponse,
+    RaffleDrawRequest,
     RaffleImagePatch,
     RafflePublic,
     RaffleUpdate,
@@ -260,6 +261,59 @@ async def patch_raffle_video(
                 detail="URL ou ID do YouTube inválido. Use watch?v=, youtu.be/ ou embed/.",
             )
         raffle.video_id = vid
+    await session.flush()
+    await session.refresh(raffle)
+    return RafflePublic.model_validate(raffle)
+
+
+@router.post("/raffles/{raffle_id}/draw", response_model=RafflePublic)
+async def draw_raffle_winner(
+    raffle_id: UUID,
+    body: RaffleDrawRequest,
+    _admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_session),
+) -> RafflePublic:
+    """
+    Regista o bilhete vencedor (tem de existir e estar pago) e passa a rifa a `finished`.
+    Só é permitido com rifa em `sold_out` e sem sorteio prévio.
+    """
+    r_result = await session.execute(
+        select(Raffle).where(Raffle.id == raffle_id).with_for_update(),
+    )
+    raffle = r_result.scalar_one_or_none()
+    if raffle is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sorteio não encontrado")
+    if raffle.status != RaffleStatus.sold_out.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Só é possível sortear rifas em estado sold_out",
+        )
+    if raffle.winning_ticket_number is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Esta rifa já tem bilhete vencedor registado",
+        )
+    n = body.winning_ticket_number
+    if n < 1 or n > raffle.total_tickets:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Número de bilhete inválido para esta rifa (1–{raffle.total_tickets})",
+        )
+    t_result = await session.execute(
+        select(Ticket).where(
+            Ticket.raffle_id == raffle_id,
+            Ticket.ticket_number == n,
+            Ticket.status == "paid",
+        ),
+    )
+    if t_result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Não existe bilhete pago com esse número nesta rifa",
+        )
+    raffle.winning_ticket_number = n
+    raffle.drawn_at = datetime.now(timezone.utc)
+    raffle.status = RaffleStatus.finished.value
     await session.flush()
     await session.refresh(raffle)
     return RafflePublic.model_validate(raffle)
