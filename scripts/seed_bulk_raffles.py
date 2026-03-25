@@ -2,6 +2,10 @@
 """
 Insere rifas de teste a partir de um catálogo JSON (imagens + trailers).
 
+Se acabaste de zerar a base (ex.: python scripts/reset_db.py ou reset_and_apply_schema.py),
+não precisas de utilizadores na BD para correr este script — só cria linhas em `raffles`.
+Para login admin no site, corre antes ou depois: python scripts/create_admin.py
+
 Ficheiro: scripts/bulk_raffles_catalog.json — edita image_url e trailer_youtube
 por jogo (URL do YouTube completa ou só o video_id de 11 caracteres).
 

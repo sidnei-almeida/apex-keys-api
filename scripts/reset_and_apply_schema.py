@@ -14,6 +14,11 @@ Depois, para o primeiro administrador (sem API pública de promoção):
   1. Define ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_WHATSAPP (env ou .env)
   2. python scripts/create_admin.py
 
+Para rifas de desenvolvimento:
+  3. python scripts/seed_bulk_raffles.py
+
+Equivalente a aplicar `schema.sql` linha a linha: python scripts/reset_db.py
+
 Requer DATABASE_URL no .env (ou ambiente). Mesma lógica SSL que app/database.py.
 """
 

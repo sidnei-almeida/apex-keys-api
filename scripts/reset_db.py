@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
 """
 Zera o schema `public` e reaplica `schema.sql` (sem precisar do cliente `psql`).
-Uso: na raiz do repo, com DATABASE_URL no ambiente ou em .env:
-  python scripts/reset_db.py
+Inclui colunas do Hall da Fama em `raffles` (`winning_ticket_number`, `drawn_at`).
+
+Uso (na raiz do repo, com DATABASE_URL no ambiente ou em .env):
+  .venv/bin/python scripts/reset_db.py
+  # requer dependência asyncpg (requirements do projeto)
+
+Depois (base vazia):
+  1. python scripts/create_admin.py   # ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_WHATSAPP
+  2. python scripts/seed_bulk_raffles.py   # povoa rifas a partir do catálogo JSON
+
+Alternativa equivalente ao SQL estático: python scripts/reset_and_apply_schema.py
+(recria tabelas via SQLAlchemy a partir de app/models.py).
 """
 from __future__ import annotations
 
