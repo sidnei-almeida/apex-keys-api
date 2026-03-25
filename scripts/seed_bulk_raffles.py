@@ -6,8 +6,9 @@ Se acabaste de zerar a base (ex.: python scripts/reset_db.py ou reset_and_apply_
 não precisas de utilizadores na BD para correr este script — só cria linhas em `raffles`.
 Para login admin no site, corre antes ou depois: python scripts/create_admin.py
 
-Ficheiro: scripts/bulk_raffles_catalog.json — edita image_url e trailer_youtube
-por jogo (URL do YouTube completa ou só o video_id de 11 caracteres).
+Ficheiro: scripts/bulk_raffles_catalog.json — edita image_url e trailer (Dailymotion).
+O site usa só IDs Dailymotion em video_id: trailer_dailymotion, URL dailymotion.com/video/… ou dai.ly/…, ou ID tipo x9abcd.
+Campos opcionais: summary, genres, series, game_modes, player_perspectives, igdb_url, igdb_game_id.
 
 Usa tactical_ticket_price como a API. O título na BD é o mesmo «title» do JSON.
 
@@ -53,9 +54,9 @@ def _default_catalog_path() -> Path:
         return local
     return _SCRIPT_DIR / "bulk_raffles_catalog.json"
 
-_YOUTUBE_ID_RE = re.compile(
-    r"(?:[?&]v=|/embed/|youtu\.be/|/shorts/)([a-zA-Z0-9_-]{11})\b",
-)
+_DM_PATH_RE = re.compile(r"dailymotion\.com/(?:embed/)?video/([a-zA-Z0-9]+)", re.I)
+_DM_SHORT_RE = re.compile(r"dai\.ly/([a-zA-Z0-9]+)", re.I)
+_DM_RAW_ID_RE = re.compile(r"^x[a-zA-Z0-9]{5,32}$")
 
 _IMAGE_KEYS = (
     "image_url",
@@ -68,6 +69,9 @@ _IMAGE_KEYS = (
     "poster",
 )
 _TRAILER_KEYS = (
+    "trailer_dailymotion",
+    "dailymotion_url",
+    "dailymotion",
     "trailer_youtube",
     "youtube_url",
     "youtube",
@@ -96,14 +100,18 @@ def _image_from_row(row: dict) -> str | None:
     return None
 
 
-def _youtube_id_from_url(url: str | None) -> str | None:
-    if not url or not str(url).strip():
+def _dailymotion_id_from_input(raw: str | None) -> str | None:
+    """Alinhado com o front: só ID Dailymotion (x… ou URL). YouTube não encaixa no embed do site."""
+    if not raw or not str(raw).strip():
         return None
-    u = str(url).strip()
-    m = _YOUTUBE_ID_RE.search(u)
+    u = str(raw).strip()
+    m = _DM_PATH_RE.search(u)
     if m:
         return m.group(1)
-    if re.fullmatch(r"[a-zA-Z0-9_-]{11}", u):
+    m = _DM_SHORT_RE.search(u)
+    if m:
+        return m.group(1)
+    if _DM_RAW_ID_RE.match(u):
         return u
     return None
 
@@ -113,12 +121,55 @@ def _trailer_from_row(row: dict) -> str | None:
     for key in _TRAILER_KEYS:
         s = _norm_str(lk.get(key))
         if s:
-            vid = _youtube_id_from_url(s)
+            vid = _dailymotion_id_from_input(s)
             if vid:
-                return vid
+                return vid[:64]
     s = _norm_str(lk.get("video_id"))
     if s:
-        return _youtube_id_from_url(s)
+        return _dailymotion_id_from_input(s)
+    return None
+
+
+def _optional_summary(row: dict) -> str | None:
+    lk = _row_keys_lower(row)
+    for key in ("summary", "sinopse", "description", "descricao", "about"):
+        s = _norm_str(lk.get(key))
+        if s:
+            return s[:16000]
+    return None
+
+
+def _str_list_field(row: dict, *keys: str) -> list[str] | None:
+    lk = _row_keys_lower(row)
+    for key in keys:
+        kk = key.lower().replace("-", "_")
+        v = lk.get(kk)
+        if v is None:
+            continue
+        if isinstance(v, list):
+            out = [str(x).strip() for x in v if str(x).strip()]
+            return out or None
+        if isinstance(v, str):
+            parts = [p.strip() for p in re.split(r"[,;|]", v) if p.strip()]
+            return parts or None
+    return None
+
+
+def _optional_igdb_url(row: dict) -> str | None:
+    lk = _row_keys_lower(row)
+    for key in ("igdb_url", "igdb", "igdb_link"):
+        s = _norm_str(lk.get(key))
+        if s.startswith("http") and "igdb.com" in s:
+            return s[:1024]
+    return None
+
+
+def _optional_igdb_game_id(row: dict) -> str | None:
+    lk = _row_keys_lower(row)
+    for key in ("igdb_game_id", "igdb_id", "igdbid"):
+        s = _norm_str(lk.get(key))
+        if s:
+            return s[:64]
     return None
 
 
@@ -164,7 +215,25 @@ def _load_games(catalog_path: Path) -> list[dict[str, Any]]:
             continue
         img = _image_from_row(row)
         vid = _trailer_from_row(row)
-        out.append({"title": title, "image_url": img, "video_id": vid})
+        out.append(
+            {
+                "title": title,
+                "image_url": img,
+                "video_id": vid,
+                "summary": _optional_summary(row),
+                "genres": _str_list_field(row, "genres", "genre", "generos"),
+                "series": _str_list_field(row, "series", "serie", "franchise"),
+                "game_modes": _str_list_field(row, "game_modes", "game_modes_list", "modos"),
+                "player_perspectives": _str_list_field(
+                    row,
+                    "player_perspectives",
+                    "perspectives",
+                    "perspectivas",
+                ),
+                "igdb_url": _optional_igdb_url(row),
+                "igdb_game_id": _optional_igdb_game_id(row),
+            },
+        )
     if not out:
         print("Erro: nenhuma entrada válida no catálogo.", file=sys.stderr)
         sys.exit(1)
@@ -236,12 +305,12 @@ async def _main() -> None:
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="Só cria entradas que tenham image_url e trailer_youtube preenchidos",
+        help="Só cria entradas que tenham image_url e trailer (Dailymotion) preenchidos",
     )
     parser.add_argument(
         "--update-media",
         action="store_true",
-        help="Não recria rifas: actualiza só image_url e video_id onde o título coincide com o catálogo",
+        help="Não recria rifas: actualiza capa, vídeo e metadados (summary, genres, IGDB, …) pelo título",
     )
     args = parser.parse_args()
 
@@ -260,8 +329,8 @@ async def _main() -> None:
     n_with_media = sum(1 for g in games if g["image_url"] and g["video_id"])
     if len(games) > 0 and n_with_media == 0:
         print(
-            "Aviso: nenhuma entrada do catálogo tem image + trailer reconhecidos. "
-            "Chaves aceites: image_url, cover_url, trailer_youtube, youtube_url, video_id, … "
+            "Aviso: nenhuma entrada do catálogo tem image + trailer Dailymotion reconhecidos. "
+            "Chaves: image_url, trailer_dailymotion, dailymotion_url, video_id (ID x…), … "
             f"Ficheiro lido: {catalog_path}",
             file=sys.stderr,
         )
@@ -291,6 +360,13 @@ async def _main() -> None:
                     continue
                 raffle.image_url = g["image_url"]
                 raffle.video_id = g["video_id"]
+                raffle.summary = g.get("summary")
+                raffle.genres = g.get("genres")
+                raffle.series = g.get("series")
+                raffle.game_modes = g.get("game_modes")
+                raffle.player_perspectives = g.get("player_perspectives")
+                raffle.igdb_url = g.get("igdb_url")
+                raffle.igdb_game_id = g.get("igdb_game_id")
                 updated += 1
             await session.commit()
         await engine.dispose()
@@ -352,7 +428,7 @@ async def _main() -> None:
                 if not g["image_url"]:
                     print(f"Aviso: sem image_url — {g['title']}", file=sys.stderr)
                 if not g["video_id"]:
-                    print(f"Aviso: sem trailer_youtube — {g['title']}", file=sys.stderr)
+                    print(f"Aviso: sem trailer Dailymotion — {g['title']}", file=sys.stderr)
                 session.add(
                     Raffle(
                         title=title,
@@ -363,6 +439,13 @@ async def _main() -> None:
                         ticket_price=ticket_price,
                         status=RaffleStatus.active.value,
                         featured_tier=tier,
+                        summary=g.get("summary"),
+                        genres=g.get("genres"),
+                        series=g.get("series"),
+                        game_modes=g.get("game_modes"),
+                        player_perspectives=g.get("player_perspectives"),
+                        igdb_url=g.get("igdb_url"),
+                        igdb_game_id=g.get("igdb_game_id"),
                     ),
                 )
                 created += 1

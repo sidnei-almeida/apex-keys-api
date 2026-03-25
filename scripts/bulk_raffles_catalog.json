@@ -1,105 +1,225 @@
 {
-  "_instrucoes": "IMPORTANTE: para não perderes URLs, copia este ficheiro para bulk_raffles_catalog.local.json (na mesma pasta) e edita SÓ o .local — está no .gitignore e o script usa-o por defeito se existir. Preenche image_url e trailer_youtube. Rifas já criadas: --update-media. --clear apaga pelo título do catálogo.",
+  "_instrucoes": "image_url: preenche manualmente (capas). Para trabalho local: bulk_raffles_catalog.local.json (gitignored). Trailers: trailer_dailymotion. Metadados: summary, genres, series, game_modes, player_perspectives, igdb_url, igdb_game_id. Limpar BD + seed: python scripts/reset_and_apply_schema.py && python scripts/create_admin.py && python scripts/seed_bulk_raffles.py --clear",
   "games": [
     {
       "title": "Resident Evil Requiem (2026)",
-      "image_url": "",
-      "trailer_youtube": ""
+      "image_url": "https://images5.alphacoders.com/139/thumb-1920-1397346.jpg",
+      "trailer_dailymotion": "https://www.dailymotion.com/video/x9l01w4",
+      "summary": "Nono capítulo principal da série de survival horror da Capcom, com foco em tensão, exploração e combate contra ameaças bio-orgânicas num cenário que revisita a mitologia de Raccoon City e arredores.",
+      "genres": ["Survival horror", "Tiro", "Ação"],
+      "series": ["Resident Evil"],
+      "game_modes": ["Um jogador"],
+      "player_perspectives": ["Terceira pessoa"],
+      "igdb_url": "https://www.igdb.com/games/resident-evil-requiem"
     },
     {
       "title": "Clair Obscur: Expedition 33",
-      "image_url": "",
-      "trailer_youtube": ""
+      "image_url": "https://images7.alphacoders.com/136/thumb-1920-1366758.jpeg",
+      "trailer_dailymotion": "https://www.dailymotion.com/video/x9x9jqu",
+      "summary": "RPG por turnos com estética Belle Époque e fantasy: a Expedição 33 parte para destruir o Pintor, uma entidade que apaga humanidade número a número.",
+      "genres": ["RPG", "Aventura"],
+      "series": ["Clair Obscur"],
+      "game_modes": ["Um jogador"],
+      "player_perspectives": ["Terceira pessoa"],
+      "igdb_url": "https://www.igdb.com/games/clair-obscur-expedition-33"
     },
     {
       "title": "Monster Hunter Wilds",
-      "image_url": "",
-      "trailer_youtube": ""
+      "image_url": "https://images8.alphacoders.com/139/thumb-1920-1393476.jpg",
+      "trailer_dailymotion": "https://www.dailymotion.com/video/x9fz6e8",
+      "summary": "Caça a monstros colossais em ecossistemas dinâmicos; reúne equipamento, estuda criaturas e enfrenta caçadas solo ou em grupo na tradição Monster Hunter.",
+      "genres": ["Ação", "RPG"],
+      "series": ["Monster Hunter"],
+      "game_modes": ["Um jogador", "Multijogador", "Cooperativo"],
+      "player_perspectives": ["Terceira pessoa"],
+      "igdb_url": "https://www.igdb.com/games/monster-hunter-wilds"
     },
     {
       "title": "Death Stranding 2: On the Beach",
-      "image_url": "",
-      "trailer_youtube": ""
+      "image_url": "https://images3.alphacoders.com/135/thumb-1920-1350291.jpeg",
+      "trailer_dailymotion": "https://www.dailymotion.com/video/x9m0p26",
+      "summary": "Continuação da obra de Hideo Kojima: Sam Bridges atravessa um mundo pós-cataclismo ligado por uma rede social e entregas, com narrativa cinematográfica e mecânicas de exploração e ligação entre comunidades.",
+      "genres": ["Ação", "Aventura"],
+      "series": ["Death Stranding"],
+      "game_modes": ["Um jogador", "Multijogador assíncrono"],
+      "player_perspectives": ["Terceira pessoa"],
+      "igdb_url": "https://www.igdb.com/games/death-stranding-2-on-the-beach"
     },
     {
       "title": "Hollow Knight: Silksong",
-      "image_url": "",
-      "trailer_youtube": ""
+      "image_url": "https://images.alphacoders.com/137/thumb-1920-1371016.png",
+      "trailer_dailymotion": "https://www.dailymotion.com/video/x9q007a",
+      "summary": "Sequela de Hollow Knight: Hornet protagoniza um metroidvania desafiante com novo reino, combate ágil e progressão de ferramentas e habilidades.",
+      "genres": ["Metroidvania", "Plataformas", "Indie"],
+      "series": ["Hollow Knight"],
+      "game_modes": ["Um jogador"],
+      "player_perspectives": ["Vista lateral"],
+      "igdb_url": "https://www.igdb.com/games/hollow-knight-silksong"
     },
     {
       "title": "Grand Theft Auto VI",
-      "image_url": "",
-      "trailer_youtube": ""
+      "image_url": "https://images3.alphacoders.com/134/thumb-1920-1343866.jpeg",
+      "trailer_dailymotion": "https://www.dailymotion.com/video/x9j2786",
+      "summary": "Mundo aberto de ação na fictícia Leonida (inspirada na Florida), com Jason e Lucia numa história de crime no estilo Bonnie & Clyde; satiriza cultura americana e redes sociais.",
+      "genres": ["Ação", "Aventura"],
+      "series": ["Grand Theft Auto"],
+      "game_modes": ["Um jogador", "Multijogador"],
+      "player_perspectives": ["Primeira pessoa", "Terceira pessoa"],
+      "igdb_url": "https://www.igdb.com/games/grand-theft-auto-vi"
     },
     {
       "title": "Metroid Prime 4: Beyond",
-      "image_url": "",
-      "trailer_youtube": ""
+      "image_url": "https://images7.alphacoders.com/140/thumb-1920-1402915.jpg",
+      "trailer_dailymotion": "https://www.dailymotion.com/video/x9vzqrw",
+      "summary": "Samus regressa em aventura em primeira pessoa: exploração, puzzles e combate com novas capacidades psíquicas e ambientes variados no planeta Viewros.",
+      "genres": ["Tiro em primeira pessoa", "Ação", "Aventura"],
+      "series": ["Metroid"],
+      "game_modes": ["Um jogador"],
+      "player_perspectives": ["Primeira pessoa"],
+      "igdb_url": "https://www.igdb.com/games/metroid-prime-4-beyond"
     },
     {
       "title": "Ghost of Yōtei",
-      "image_url": "",
-      "trailer_youtube": ""
+      "image_url": "https://images7.alphacoders.com/138/thumb-1920-1387216.jpg",
+      "trailer_dailymotion": "https://www.dailymotion.com/video/x9qoho8",
+      "summary": "Spin-off histórico de Ghost of Tsushima: uma guerreira em Hokkaido do século XVII enfrenta clima rigoroso e inimigos com combate de katana e exploração cinematográfica.",
+      "genres": ["Ação", "Aventura"],
+      "series": ["Ghost of Tsushima"],
+      "game_modes": ["Um jogador"],
+      "player_perspectives": ["Terceira pessoa"],
+      "igdb_url": "https://www.igdb.com/games/ghost-of-yotei"
     },
     {
       "title": "Mafia: The Old Country",
-      "image_url": "",
-      "trailer_youtube": ""
+      "image_url": "https://images3.alphacoders.com/139/thumb-1920-1396444.jpg",
+      "trailer_dailymotion": "https://www.dailymotion.com/video/x9j6p2o",
+      "summary": "Prequela da série Mafia na Sicília de 1900: narrativa de crime organizado, tiroteios e condução num mundo linear e cinematográfico.",
+      "genres": ["Ação", "Aventura"],
+      "series": ["Mafia"],
+      "game_modes": ["Um jogador"],
+      "player_perspectives": ["Terceira pessoa"],
+      "igdb_url": "https://www.igdb.com/games/mafia-the-old-country"
     },
     {
       "title": "DOOM: The Dark Ages",
-      "image_url": "",
-      "trailer_youtube": ""
+      "image_url": "https://images5.alphacoders.com/138/thumb-1920-1389830.jpg",
+      "trailer_dailymotion": "https://www.dailymotion.com/video/x9i92i4",
+      "summary": "Capítulo medieval da saga DOOM: o Slayer combate demónios com armas brutais, escudo e mechas numa campanha acelerada e visceral.",
+      "genres": ["Tiro", "Ação"],
+      "series": ["Doom"],
+      "game_modes": ["Um jogador"],
+      "player_perspectives": ["Primeira pessoa"],
+      "igdb_url": "https://www.igdb.com/games/doom-the-dark-ages"
     },
     {
       "title": "Battlefield 6",
-      "image_url": "",
-      "trailer_youtube": ""
+      "image_url": "https://images7.alphacoders.com/139/thumb-1920-1398809.jpg",
+      "trailer_dailymotion": "https://www.dailymotion.com/video/x9r6lv2",
+      "summary": "Shooter militar em larga escala com mapas destrutíveis, veículos e modos campanha e multijogador focados em combate combinado armas-veículos.",
+      "genres": ["Tiro", "Multijogador"],
+      "series": ["Battlefield"],
+      "game_modes": ["Um jogador", "Multijogador"],
+      "player_perspectives": ["Primeira pessoa"],
+      "igdb_url": "https://www.igdb.com/games/battlefield-6"
     },
     {
       "title": "Borderlands 4",
-      "image_url": "",
-      "trailer_youtube": ""
+      "image_url": "https://images7.alphacoders.com/139/thumb-1920-1396588.jpg",
+      "trailer_dailymotion": "https://www.dailymotion.com/video/x9p6b9s",
+      "summary": "Looter-shooter cooperativo com humor, bilhões de armas geradas proceduralmente e Vault Hunters em mundos sci-fi coloridos.",
+      "genres": ["Tiro", "RPG", "Looter shooter"],
+      "series": ["Borderlands"],
+      "game_modes": ["Um jogador", "Cooperativo"],
+      "player_perspectives": ["Primeira pessoa"],
+      "igdb_url": "https://www.igdb.com/games/borderlands-4"
     },
     {
       "title": "Call of Duty: Black Ops 7",
-      "image_url": "",
-      "trailer_youtube": ""
+      "image_url": "https://images6.alphacoders.com/139/thumb-1920-1397239.jpg",
+      "trailer_dailymotion": "https://www.dailymotion.com/video/x9u02km",
+      "summary": "FPS da Treyarch com campanha cooperativa, multijogador competitivo e modo Zombies em cenários futuristas e variados.",
+      "genres": ["Tiro", "Ação"],
+      "series": ["Call of Duty"],
+      "game_modes": ["Um jogador", "Multijogador", "Cooperativo"],
+      "player_perspectives": ["Primeira pessoa"],
+      "igdb_url": "https://www.igdb.com/games/call-of-duty-black-ops-7"
     },
     {
       "title": "Assassin's Creed Shadows",
-      "image_url": "",
-      "trailer_youtube": ""
+      "image_url": "https://images8.alphacoders.com/136/thumb-1920-1362729.jpeg",
+      "trailer_dailymotion": "https://www.dailymotion.com/video/x9tb1j4",
+      "summary": "AC no Japão feudal: alterna entre um samurai e uma shinobi num mundo aberto com infiltração, combate e exploração histórica.",
+      "genres": ["Ação", "Aventura", "Furtivo"],
+      "series": ["Assassin's Creed"],
+      "game_modes": ["Um jogador"],
+      "player_perspectives": ["Terceira pessoa"],
+      "igdb_url": "https://www.igdb.com/games/assassins-creed-shadows"
     },
     {
       "title": "Star Wars Outlaws",
-      "image_url": "",
-      "trailer_youtube": ""
+      "image_url": "https://images4.alphacoders.com/136/thumb-1920-1365736.jpeg",
+      "trailer_dailymotion": "https://www.dailymotion.com/video/x8lppf7",
+      "summary": "Aventura em mundo aberto no universo Star Wars: Kay Vess, uma fora-da-lei, negocia com sindicatos do crime e foge ao Império entre planetas icónicos.",
+      "genres": ["Ação", "Aventura"],
+      "series": ["Star Wars"],
+      "game_modes": ["Um jogador"],
+      "player_perspectives": ["Terceira pessoa"],
+      "igdb_url": "https://www.igdb.com/games/star-wars-outlaws"
     },
     {
       "title": "Dragon Age: The Veilguard",
-      "image_url": "",
-      "trailer_youtube": ""
+      "image_url": "https://images5.alphacoders.com/136/thumb-1920-1365907.jpeg",
+      "trailer_dailymotion": "https://www.dailymotion.com/video/x96c5v8",
+      "summary": "RPG da BioWare: lidera a Veilguard contra demónios e facções num Thedas em crise, com companheiros, escolhas narrativas e combate tático em tempo real.",
+      "genres": ["RPG", "Ação"],
+      "series": ["Dragon Age"],
+      "game_modes": ["Um jogador"],
+      "player_perspectives": ["Terceira pessoa"],
+      "igdb_url": "https://www.igdb.com/games/dragon-age-the-veilguard"
     },
     {
       "title": "Black Myth: Wukong",
-      "image_url": "",
-      "trailer_youtube": ""
+      "image_url": "https://images3.alphacoders.com/137/thumb-1920-1374936.png",
+      "trailer_dailymotion": "https://www.dailymotion.com/video/x8d58q5",
+      "summary": "Action RPG inspirado na Viagem para o Oeste: combate exigente contra deuses e monstros mitológicos chineses com bastão e transformações.",
+      "genres": ["Ação", "RPG", "Soulslike"],
+      "series": ["Black Myth"],
+      "game_modes": ["Um jogador"],
+      "player_perspectives": ["Terceira pessoa"],
+      "igdb_url": "https://www.igdb.com/games/black-myth-wukong"
     },
     {
       "title": "Elden Ring: Nightreign",
-      "image_url": "",
-      "trailer_youtube": ""
+      "image_url": "https://images8.alphacoders.com/138/thumb-1920-1385514.png",
+      "trailer_dailymotion": "https://www.dailymotion.com/video/x9ar76y",
+      "summary": "Spin-off cooperativo do universo Elden Ring: runs procedurais de três noites, heróis com papéis distintos e sobrevivência contra hordas no Limgrave reimaginado.",
+      "genres": ["Ação", "RPG"],
+      "series": ["Elden Ring"],
+      "game_modes": ["Cooperativo", "Multijogador"],
+      "player_perspectives": ["Terceira pessoa"],
+      "igdb_url": "https://www.igdb.com/games/elden-ring-nightreign"
     },
     {
       "title": "Avowed",
-      "image_url": "",
-      "trailer_youtube": ""
+      "image_url": "https://images6.alphacoders.com/135/thumb-1920-1350737.jpeg",
+      "trailer_dailymotion": "https://www.dailymotion.com/video/xa09oqu",
+      "summary": "RPG em primeira pessoa nos Living Lands de Eora (universo Pillars of Eternity): magia, espadas, facções e escolhas que moldam a região.",
+      "genres": ["RPG", "Ação"],
+      "series": ["Pillars of Eternity"],
+      "game_modes": ["Um jogador"],
+      "player_perspectives": ["Primeira pessoa"],
+      "igdb_url": "https://www.igdb.com/games/avowed"
     },
     {
       "title": "Indiana Jones and the Great Circle",
-      "image_url": "",
-      "trailer_youtube": ""
+      "image_url": "https://images.alphacoders.com/138/thumb-1920-1388801.png",
+      "trailer_dailymotion": "https://www.dailymotion.com/video/x9ptews",
+      "summary": "Aventura em primeira pessoa da MachineGames: Indy investiga o Grande Círculo em 1937 com chicote, combate corpo a corpo e puzzles globais.",
+      "genres": ["Ação", "Aventura"],
+      "series": ["Indiana Jones"],
+      "game_modes": ["Um jogador"],
+      "player_perspectives": ["Primeira pessoa"],
+      "igdb_url": "https://www.igdb.com/games/indiana-jones-and-the-great-circle"
     }
   ]
 }
