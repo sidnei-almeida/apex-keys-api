@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.avatar_image import image_bytes_to_webp_avatar
 from app.deps import get_session
 from app.models import Notification, Raffle, RaffleStatus, Ticket, User
 from app.schemas import MyTicketOut, NotificationOut, RafflePublic, UserProfileUpdate, UserPublic
@@ -14,7 +15,8 @@ from app.security import get_current_user_id
 
 router = APIRouter()
 
-AVATAR_MAX_BYTES = 2 * 1024 * 1024  # 2MB
+# Limite do ficheiro original no upload (pode ser foto gigapixel); depois virá WebP ~384px.
+AVATAR_UPLOAD_MAX_BYTES = 20 * 1024 * 1024  # 20MB
 AVATAR_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
@@ -26,8 +28,18 @@ def _upload_dir() -> Path:
 
 
 def _avatar_url(filename: str) -> str:
-    """Retorna o path público do avatar (ex.: /uploads/avatars/xxx.webp)."""
+    """Retorna o path público do avatar (ex.: /uploads/avatars/{uuid}.webp)."""
     return f"/uploads/avatars/{filename}"
+
+
+def _remove_previous_avatar_files(upload_dir: Path, user_id: UUID) -> None:
+    """Remove avatares antigos deste utilizador (outras extensões antes da pipeline WebP)."""
+    prefix = str(user_id)
+    for p in upload_dir.glob(f"{prefix}.*"):
+        try:
+            p.unlink()
+        except OSError:
+            pass
 
 
 @router.get("/me/tickets", response_model=list[MyTicketOut])
@@ -193,11 +205,19 @@ async def upload_avatar(
         )
 
     content = await file.read()
-    if len(content) > AVATAR_MAX_BYTES:
+    if len(content) > AVATAR_UPLOAD_MAX_BYTES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Arquivo muito grande. Máximo: {AVATAR_MAX_BYTES // (1024*1024)}MB",
+            detail=f"Arquivo muito grande. Máximo: {AVATAR_UPLOAD_MAX_BYTES // (1024 * 1024)}MB antes da otimização.",
         )
+
+    try:
+        webp_bytes = image_bytes_to_webp_avatar(content)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
 
     result = await session.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -205,10 +225,11 @@ async def upload_avatar(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuário não encontrado")
 
     upload_dir = _upload_dir()
-    filename = f"{user_id}{ext}"
+    _remove_previous_avatar_files(upload_dir, user_id)
+    filename = f"{user_id}.webp"
     filepath = upload_dir / filename
     with open(filepath, "wb") as f:
-        f.write(content)
+        f.write(webp_bytes)
 
     user.avatar_url = _avatar_url(filename)
     await session.flush()
