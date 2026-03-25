@@ -40,18 +40,21 @@ from app.security import get_current_admin
 
 router = APIRouter()
 
-_YOUTUBE_ID_RE = re.compile(r"(?:[?&]v=|/embed/|youtu\.be/)([a-zA-Z0-9_-]{11})\b")
+_DM_ID_RE = re.compile(
+    r"(?:dailymotion\.com/(?:embed/)?video/|dai\.ly/)([a-zA-Z0-9]+)",
+    re.I,
+)
 
 
-def _youtube_id_from_url(url: str | None) -> str | None:
-    """Extrai o video_id (11 chars) de URL YouTube ou devolve o próprio valor se já for ID."""
+def _dailymotion_id_from_url(url: str | None) -> str | None:
+    """Extrai o ID do vídeo Dailymotion da URL ou devolve o valor se já for um ID (ex.: x8abcd)."""
     if not url or not url.strip():
         return None
     u = url.strip()
-    m = _YOUTUBE_ID_RE.search(u)
+    m = _DM_ID_RE.search(u)
     if m:
         return m.group(1)
-    if re.fullmatch(r"[a-zA-Z0-9_-]{11}", u):
+    if re.fullmatch(r"x[a-zA-Z0-9]{5,32}", u):
         return u
     return None
 
@@ -100,6 +103,9 @@ async def create_raffle(
 ) -> RafflePublic:
     ticket_price = tactical_ticket_price(body.total_price, body.total_tickets)
     ft = body.featured_tier if body.featured_tier in ("featured", "carousel", "none") else FeaturedTier.none.value
+    sm = body.summary.strip() if body.summary and body.summary.strip() else None
+    igdb_u = body.igdb_url.strip() if body.igdb_url and body.igdb_url.strip() else None
+    igdb_gid = body.igdb_game_id.strip() if body.igdb_game_id and body.igdb_game_id.strip() else None
     raffle = Raffle(
         title=body.title,
         image_url=body.image_url,
@@ -109,6 +115,13 @@ async def create_raffle(
         ticket_price=ticket_price,
         status=RaffleStatus.active.value,
         featured_tier=ft,
+        summary=sm,
+        genres=list(body.genres) if body.genres else None,
+        series=list(body.series) if body.series else None,
+        game_modes=list(body.game_modes) if body.game_modes else None,
+        player_perspectives=list(body.player_perspectives) if body.player_perspectives else None,
+        igdb_url=igdb_u,
+        igdb_game_id=igdb_gid,
     )
     session.add(raffle)
     await session.flush()
@@ -181,6 +194,18 @@ async def update_raffle(
     for key in ("title", "image_url", "video_id"):
         if key in data:
             setattr(raffle, key, data[key])
+    if "summary" in data:
+        s = data["summary"]
+        raffle.summary = s.strip() if isinstance(s, str) and s.strip() else None
+    for key in ("genres", "series", "game_modes", "player_perspectives"):
+        if key in data and data[key] is not None:
+            setattr(raffle, key, list(data[key]))
+    if "igdb_url" in data:
+        u = data["igdb_url"]
+        raffle.igdb_url = u.strip() if isinstance(u, str) and u.strip() else None
+    if "igdb_game_id" in data:
+        gid = data["igdb_game_id"]
+        raffle.igdb_game_id = gid.strip() if isinstance(gid, str) and gid.strip() else None
     if "featured_tier" in data:
         val = data["featured_tier"]
         raffle.featured_tier = val if val in ("featured", "carousel", "none") else FeaturedTier.none.value
@@ -242,8 +267,8 @@ async def patch_raffle_video(
     session: AsyncSession = Depends(get_session),
 ) -> RafflePublic:
     """
-    Atualiza só o campo video_id da rifa.
-    Aceita URL completa (watch?v=, youtu.be/, embed/) ou só o ID; grava o video_id.
+    Atualiza só o campo video_id da rifa (Dailymotion).
+    Aceita URL (dailymotion.com/video/…, dai.ly/…) ou só o ID (ex.: x8abcd).
     """
     r_result = await session.execute(
         select(Raffle).where(Raffle.id == raffle_id).with_for_update(),
@@ -254,11 +279,11 @@ async def patch_raffle_video(
     if body.youtube_url is None:
         raffle.video_id = None
     else:
-        vid = _youtube_id_from_url(body.youtube_url)
+        vid = _dailymotion_id_from_url(body.youtube_url)
         if vid is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="URL ou ID do YouTube inválido. Use watch?v=, youtu.be/ ou embed/.",
+                detail="URL ou ID do Dailymotion inválido. Use dailymotion.com/video/…, dai.ly/… ou só o ID (ex.: x8abcd).",
             )
         raffle.video_id = vid
     await session.flush()

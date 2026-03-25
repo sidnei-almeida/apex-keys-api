@@ -220,6 +220,26 @@ class RafflePublic(BaseModel):
     winning_ticket_number: int | None = None
     drawn_at: datetime | None = None
     created_at: datetime
+    summary: str | None = None
+    genres: list[str] = Field(default_factory=list)
+    series: list[str] = Field(default_factory=list)
+    game_modes: list[str] = Field(default_factory=list)
+    player_perspectives: list[str] = Field(default_factory=list)
+    igdb_url: str | None = None
+    igdb_game_id: str | None = None
+
+    @field_validator("genres", "series", "game_modes", "player_perspectives", mode="before")
+    @classmethod
+    def _coerce_str_lists(cls, v: object) -> list[str]:
+        if v is None:
+            return []
+        if not isinstance(v, list):
+            return []
+        out: list[str] = []
+        for item in v:
+            if isinstance(item, str) and item.strip():
+                out.append(item.strip())
+        return out
 
 
 class RaffleListOut(RafflePublic):
@@ -325,7 +345,7 @@ class AdminRaffleCreate(BaseModel):
 
     title: str = Field(..., min_length=1, max_length=255)
     image_url: str | None = Field(None, max_length=1024)
-    video_id: str | None = Field(None, max_length=64, description="ID do vídeo no YouTube")
+    video_id: str | None = Field(None, max_length=64, description="ID do vídeo no Dailymotion (ex.: x8abcd)")
     total_price: Decimal = Field(..., gt=0)
     total_tickets: int = Field(..., gt=0)
     featured_tier: FeaturedTierType | None = Field(
@@ -335,6 +355,13 @@ class AdminRaffleCreate(BaseModel):
             "carousel=carrossel, none=só em /rifas"
         ),
     )
+    summary: str | None = Field(None, max_length=16000)
+    genres: list[str] = Field(default_factory=list)
+    series: list[str] = Field(default_factory=list)
+    game_modes: list[str] = Field(default_factory=list)
+    player_perspectives: list[str] = Field(default_factory=list)
+    igdb_url: str | None = Field(None, max_length=1024)
+    igdb_game_id: str | None = Field(None, max_length=64)
 
 
 class RaffleUpdate(BaseModel):
@@ -344,7 +371,7 @@ class RaffleUpdate(BaseModel):
 
     title: str | None = Field(default=None, min_length=1, max_length=255)
     image_url: str | None = Field(default=None, max_length=1024)
-    video_id: str | None = Field(default=None, max_length=64, description="ID do vídeo no YouTube")
+    video_id: str | None = Field(default=None, max_length=64, description="ID do vídeo no Dailymotion (ex.: x8abcd)")
     total_price: Decimal | None = Field(default=None, gt=0)
     total_tickets: int | None = Field(default=None, gt=0)
     featured_tier: FeaturedTierType | None = Field(
@@ -353,6 +380,13 @@ class RaffleUpdate(BaseModel):
             "featured=hero home (várias rifas permitidas), carousel=carrossel, none=só em /rifas"
         ),
     )
+    summary: str | None = Field(default=None, max_length=16000)
+    genres: list[str] | None = None
+    series: list[str] | None = None
+    game_modes: list[str] | None = None
+    player_perspectives: list[str] | None = None
+    igdb_url: str | None = Field(default=None, max_length=1024)
+    igdb_game_id: str | None = Field(default=None, max_length=64)
 
 
 class RaffleImagePatch(BaseModel):
@@ -373,12 +407,12 @@ class FeaturedTierPatch(BaseModel):
 
 
 class RaffleVideoPatch(BaseModel):
-    """Atualiza só o vídeo YouTube. Aceita URL completa ou ID; grava o ID no campo video_id."""
+    """Atualiza só o trailer Dailymotion. Aceita URL completa ou ID; grava o video_id."""
 
     youtube_url: str | None = Field(
         default=None,
         max_length=512,
-        description="URL (watch?v=, youtu.be/, embed/) ou só o video_id; null para limpar",
+        description="URL Dailymotion (dailymotion.com/video/…, dai.ly/…) ou só o ID; null para limpar",
     )
 
 
