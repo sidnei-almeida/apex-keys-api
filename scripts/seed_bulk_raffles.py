@@ -8,7 +8,11 @@ Para login admin no site, corre antes ou depois: python scripts/create_admin.py
 
 Ficheiro: scripts/bulk_raffles_catalog.json — edita image_url e trailer (Dailymotion).
 O site usa só IDs Dailymotion em video_id: trailer_dailymotion, URL dailymotion.com/video/… ou dai.ly/…, ou ID tipo x9abcd.
-Campos opcionais: summary, genres, series, game_modes, player_perspectives, igdb_url, igdb_game_id.
+Campos opcionais: summary, genres, series, game_modes, player_perspectives, igdb_url, igdb_game_id,
+steam_redemption_code (chave Steam para o vencedor; enviada por notificação após o sorteio).
+
+Não precisas de alterar o JSON por «schema novo»: o seed cria rifas active; scheduled_live_draw_at,
+winning_ticket_number e drawn_at ficam NULL até a lógica da API (esgotar / sorteio).
 
 Usa tactical_ticket_price como a API. O título na BD é o mesmo «title» do JSON.
 
@@ -173,6 +177,21 @@ def _optional_igdb_game_id(row: dict) -> str | None:
     return None
 
 
+def _optional_steam_redemption_code(row: dict) -> str | None:
+    lk = _row_keys_lower(row)
+    for key in (
+        "steam_redemption_code",
+        "steam_code",
+        "redemption_code",
+        "chave_steam",
+        "codigo_steam",
+    ):
+        s = _norm_str(lk.get(key))
+        if s:
+            return s[:512]
+    return None
+
+
 def _resolve_catalog_path(p: Path) -> Path:
     """Aceita caminho absoluto ou relativo a scripts/, raiz do repo ou cwd."""
     if p.is_file():
@@ -232,6 +251,7 @@ def _load_games(catalog_path: Path) -> list[dict[str, Any]]:
                 ),
                 "igdb_url": _optional_igdb_url(row),
                 "igdb_game_id": _optional_igdb_game_id(row),
+                "steam_redemption_code": _optional_steam_redemption_code(row),
             },
         )
     if not out:
@@ -367,6 +387,7 @@ async def _main() -> None:
                 raffle.player_perspectives = g.get("player_perspectives")
                 raffle.igdb_url = g.get("igdb_url")
                 raffle.igdb_game_id = g.get("igdb_game_id")
+                raffle.steam_redemption_code = g.get("steam_redemption_code")
                 updated += 1
             await session.commit()
         await engine.dispose()
@@ -446,6 +467,7 @@ async def _main() -> None:
                         player_perspectives=g.get("player_perspectives"),
                         igdb_url=g.get("igdb_url"),
                         igdb_game_id=g.get("igdb_game_id"),
+                        steam_redemption_code=g.get("steam_redemption_code"),
                     ),
                 )
                 created += 1

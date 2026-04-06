@@ -85,6 +85,8 @@ class Raffle(Base):
     player_perspectives: Mapped[list | None] = mapped_column(JSON, nullable=True)
     igdb_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     igdb_game_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Chave Steam a entregar ao vencedor (definida no QG; não exposta nas rotas públicas)
+    steam_redemption_code: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     tickets: Mapped[list["Ticket"]] = relationship(back_populates="raffle")
 

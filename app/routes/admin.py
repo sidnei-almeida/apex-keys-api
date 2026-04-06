@@ -10,7 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_session
 from app.email_service import send_raffle_canceled_refund_email
-from app.live_draw_service import execute_random_draw_for_sold_out_raffle
+from app.live_draw_service import (
+    execute_random_draw_for_sold_out_raffle,
+    notify_winner_steam_redemption_if_set,
+)
 from app.models import FeaturedTier, Notification, Raffle, RaffleStatus, Ticket, Transaction, User
 from app.pricing import tactical_ticket_price
 from app.reservation_service import (
@@ -25,6 +28,7 @@ from app.reservation_service import (
 from app.schemas import (
     AdminDrawRandomOut,
     AdminRaffleCreate,
+    AdminRaffleOut,
     AdminReservationRowOut,
     AdminReservationsListOut,
     AdminUserPatch,
@@ -37,7 +41,6 @@ from app.schemas import (
     RaffleDeleteResponse,
     RaffleDrawRequest,
     RaffleImagePatch,
-    RafflePublic,
     RaffleUpdate,
     RaffleVideoPatch,
     UserPublic,
@@ -140,17 +143,22 @@ async def adjust_user_balance(
     )
 
 
-@router.post("/raffles", response_model=RafflePublic, status_code=status.HTTP_201_CREATED)
+@router.post("/raffles", response_model=AdminRaffleOut, status_code=status.HTTP_201_CREATED)
 async def create_raffle(
     body: AdminRaffleCreate,
     _admin: User = Depends(get_current_admin),
     session: AsyncSession = Depends(get_session),
-) -> RafflePublic:
+) -> AdminRaffleOut:
     ticket_price = tactical_ticket_price(body.total_price, body.total_tickets)
     ft = body.featured_tier if body.featured_tier in ("featured", "carousel", "none") else FeaturedTier.none.value
     sm = body.summary.strip() if body.summary and body.summary.strip() else None
     igdb_u = body.igdb_url.strip() if body.igdb_url and body.igdb_url.strip() else None
     igdb_gid = body.igdb_game_id.strip() if body.igdb_game_id and body.igdb_game_id.strip() else None
+    steam = (
+        body.steam_redemption_code.strip()
+        if body.steam_redemption_code and body.steam_redemption_code.strip()
+        else None
+    )
     raffle = Raffle(
         title=body.title,
         image_url=body.image_url,
@@ -167,33 +175,34 @@ async def create_raffle(
         player_perspectives=list(body.player_perspectives) if body.player_perspectives else None,
         igdb_url=igdb_u,
         igdb_game_id=igdb_gid,
+        steam_redemption_code=steam,
     )
     session.add(raffle)
     await session.flush()
     await session.refresh(raffle)
-    return RafflePublic.model_validate(raffle)
+    return AdminRaffleOut.model_validate(raffle)
 
 
-@router.get("/raffles/{raffle_id}", response_model=RafflePublic)
+@router.get("/raffles/{raffle_id}", response_model=AdminRaffleOut)
 async def get_raffle_admin(
     raffle_id: UUID,
     _admin: User = Depends(get_current_admin),
     session: AsyncSession = Depends(get_session),
-) -> RafflePublic:
+) -> AdminRaffleOut:
     result = await session.execute(select(Raffle).where(Raffle.id == raffle_id))
     raffle = result.scalar_one_or_none()
     if raffle is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sorteio não encontrado")
-    return RafflePublic.model_validate(raffle)
+    return AdminRaffleOut.model_validate(raffle)
 
 
-@router.put("/raffles/{raffle_id}", response_model=RafflePublic)
+@router.put("/raffles/{raffle_id}", response_model=AdminRaffleOut)
 async def update_raffle(
     raffle_id: UUID,
     body: RaffleUpdate,
     _admin: User = Depends(get_current_admin),
     session: AsyncSession = Depends(get_session),
-) -> RafflePublic:
+) -> AdminRaffleOut:
     r_result = await session.execute(
         select(Raffle).where(Raffle.id == raffle_id).with_for_update(),
     )
@@ -203,7 +212,7 @@ async def update_raffle(
 
     data = body.model_dump(exclude_unset=True)
     if not data:
-        return RafflePublic.model_validate(raffle)
+        return AdminRaffleOut.model_validate(raffle)
 
     need_recalc = "total_price" in data or "total_tickets" in data
     if need_recalc:
@@ -251,22 +260,28 @@ async def update_raffle(
     if "igdb_game_id" in data:
         gid = data["igdb_game_id"]
         raffle.igdb_game_id = gid.strip() if isinstance(gid, str) and gid.strip() else None
+    if "steam_redemption_code" in data:
+        scm = data["steam_redemption_code"]
+        if scm is None:
+            raffle.steam_redemption_code = None
+        elif isinstance(scm, str):
+            raffle.steam_redemption_code = scm.strip() if scm.strip() else None
     if "featured_tier" in data:
         val = data["featured_tier"]
         raffle.featured_tier = val if val in ("featured", "carousel", "none") else FeaturedTier.none.value
 
     await session.flush()
     await session.refresh(raffle)
-    return RafflePublic.model_validate(raffle)
+    return AdminRaffleOut.model_validate(raffle)
 
 
-@router.patch("/raffles/{raffle_id}/image", response_model=RafflePublic)
+@router.patch("/raffles/{raffle_id}/image", response_model=AdminRaffleOut)
 async def patch_raffle_image(
     raffle_id: UUID,
     body: RaffleImagePatch,
     _admin: User = Depends(get_current_admin),
     session: AsyncSession = Depends(get_session),
-) -> RafflePublic:
+) -> AdminRaffleOut:
     """Atualiza só o campo image_url da rifa (URL da capa em 1080p)."""
     r_result = await session.execute(
         select(Raffle).where(Raffle.id == raffle_id).with_for_update(),
@@ -277,16 +292,16 @@ async def patch_raffle_image(
     raffle.image_url = body.image_url
     await session.flush()
     await session.refresh(raffle)
-    return RafflePublic.model_validate(raffle)
+    return AdminRaffleOut.model_validate(raffle)
 
 
-@router.patch("/raffles/{raffle_id}/featured-tier", response_model=RafflePublic)
+@router.patch("/raffles/{raffle_id}/featured-tier", response_model=AdminRaffleOut)
 async def patch_raffle_featured_tier(
     raffle_id: UUID,
     body: FeaturedTierPatch,
     _admin: User = Depends(get_current_admin),
     session: AsyncSession = Depends(get_session),
-) -> RafflePublic:
+) -> AdminRaffleOut:
     """
     Atualiza só o featured_tier (estrela).
     Várias rifas podem estar em `featured` (hero com rotação lenta); não há demissão
@@ -301,16 +316,16 @@ async def patch_raffle_featured_tier(
     raffle.featured_tier = body.featured_tier
     await session.flush()
     await session.refresh(raffle)
-    return RafflePublic.model_validate(raffle)
+    return AdminRaffleOut.model_validate(raffle)
 
 
-@router.patch("/raffles/{raffle_id}/video", response_model=RafflePublic)
+@router.patch("/raffles/{raffle_id}/video", response_model=AdminRaffleOut)
 async def patch_raffle_video(
     raffle_id: UUID,
     body: RaffleVideoPatch,
     _admin: User = Depends(get_current_admin),
     session: AsyncSession = Depends(get_session),
-) -> RafflePublic:
+) -> AdminRaffleOut:
     """
     Atualiza só o campo video_id da rifa (Dailymotion).
     Aceita URL (dailymotion.com/video/…, dai.ly/…) ou só o ID (ex.: x8abcd).
@@ -333,7 +348,7 @@ async def patch_raffle_video(
         raffle.video_id = vid
     await session.flush()
     await session.refresh(raffle)
-    return RafflePublic.model_validate(raffle)
+    return AdminRaffleOut.model_validate(raffle)
 
 
 @router.get("/raffles/{raffle_id}/wheel-segments", response_model=AdminWheelSegmentsOut)
@@ -411,20 +426,20 @@ async def admin_draw_random_winner(
 
     await session.refresh(raffle)
     return AdminDrawRandomOut(
-        raffle=RafflePublic.model_validate(raffle),
+        raffle=AdminRaffleOut.model_validate(raffle),
         winner_ticket_number=n,
         winner_user_id=winner_uid,
         winner_full_name=winner_name,
     )
 
 
-@router.post("/raffles/{raffle_id}/draw", response_model=RafflePublic)
+@router.post("/raffles/{raffle_id}/draw", response_model=AdminRaffleOut)
 async def draw_raffle_winner(
     raffle_id: UUID,
     body: RaffleDrawRequest,
     _admin: User = Depends(get_current_admin),
     session: AsyncSession = Depends(get_session),
-) -> RafflePublic:
+) -> AdminRaffleOut:
     """
     Regista o bilhete vencedor (tem de existir e estar pago) e passa a rifa a `finished`.
     Só é permitido com rifa em `sold_out` e sem sorteio prévio.
@@ -458,7 +473,8 @@ async def draw_raffle_winner(
             Ticket.status == "paid",
         ),
     )
-    if t_result.scalar_one_or_none() is None:
+    winning_ticket = t_result.scalar_one_or_none()
+    if winning_ticket is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Não existe bilhete pago com esse número nesta rifa",
@@ -467,8 +483,9 @@ async def draw_raffle_winner(
     raffle.drawn_at = datetime.now(timezone.utc)
     raffle.status = RaffleStatus.finished.value
     await session.flush()
+    await notify_winner_steam_redemption_if_set(session, raffle, winning_ticket.user_id)
     await session.refresh(raffle)
-    return RafflePublic.model_validate(raffle)
+    return AdminRaffleOut.model_validate(raffle)
 
 
 @router.post("/raffles/{raffle_id}/cancel", response_model=RaffleCancelResponse)

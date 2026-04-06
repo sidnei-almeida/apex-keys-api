@@ -85,8 +85,34 @@ async def execute_random_draw_for_sold_out_raffle(session: AsyncSession, raffle:
     raffle.drawn_at = datetime.now(timezone.utc)
     raffle.status = RaffleStatus.finished.value
     await session.flush()
+    await notify_winner_steam_redemption_if_set(session, raffle, winning_user.id)
     await session.refresh(raffle)
     return n, winning_user.id, winning_user.full_name
+
+
+async def notify_winner_steam_redemption_if_set(
+    session: AsyncSession,
+    raffle: Raffle,
+    winner_user_id: UUID,
+) -> None:
+    """Se existir código Steam na rifa, notifica só o vencedor (in-app)."""
+    code = (raffle.steam_redemption_code or "").strip()
+    if not code:
+        return
+    title = f"Ganhaste: {raffle.title}"
+    body = (
+        f"O teu código Steam para resgate: {code}\n"
+        "Guarda-o num local seguro. Em caso de dúvida, contacta o suporte."
+    )
+    session.add(
+        Notification(
+            user_id=winner_user_id,
+            type="raffle_winner_steam",
+            title=title[:255],
+            body=body,
+        ),
+    )
+    await session.flush()
 
 
 async def run_scheduled_live_draw_if_due(session: AsyncSession, raffle_id: UUID) -> bool:

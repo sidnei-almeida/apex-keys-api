@@ -41,7 +41,8 @@ CREATE TABLE IF NOT EXISTS raffles (
     game_modes JSONB,
     player_perspectives JSONB,
     igdb_url VARCHAR(1024),
-    igdb_game_id VARCHAR(64)
+    igdb_game_id VARCHAR(64),
+    steam_redemption_code VARCHAR(512)
 );
 
 CREATE INDEX IF NOT EXISTS ix_raffles_scheduled_live_draw_at ON raffles (scheduled_live_draw_at);

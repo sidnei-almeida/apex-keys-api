@@ -259,6 +259,12 @@ class RafflePublic(BaseModel):
         return out
 
 
+class AdminRaffleOut(RafflePublic):
+    """Rifa como vista no painel admin — inclui código Steam para resgate (não usar em API pública)."""
+
+    steam_redemption_code: str | None = None
+
+
 class RaffleListOut(RafflePublic):
     """RafflePublic + vendidos e reservas ativas (pending_payment)."""
 
@@ -333,7 +339,7 @@ class AdminWheelSegmentsOut(BaseModel):
 class AdminDrawRandomOut(BaseModel):
     """Após sorteio aleatório no servidor: rifa finalizada + identidade do vencedor."""
 
-    raffle: RafflePublic
+    raffle: AdminRaffleOut
     winner_ticket_number: int
     winner_user_id: UUID
     winner_full_name: str
@@ -442,6 +448,11 @@ class AdminRaffleCreate(BaseModel):
     player_perspectives: list[str] = Field(default_factory=list)
     igdb_url: str | None = Field(None, max_length=1024)
     igdb_game_id: str | None = Field(None, max_length=64)
+    steam_redemption_code: str | None = Field(
+        None,
+        max_length=512,
+        description="Chave/código Steam a enviar ao vencedor após o sorteio (in-app).",
+    )
 
 
 class RaffleUpdate(BaseModel):
@@ -467,6 +478,11 @@ class RaffleUpdate(BaseModel):
     player_perspectives: list[str] | None = None
     igdb_url: str | None = Field(default=None, max_length=1024)
     igdb_game_id: str | None = Field(default=None, max_length=64)
+    steam_redemption_code: str | None = Field(
+        default=None,
+        max_length=512,
+        description="Chave Steam; null para não alterar; string vazia para limpar.",
+    )
 
 
 class RaffleImagePatch(BaseModel):
