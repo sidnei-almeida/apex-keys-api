@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -6,11 +7,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_session
+from app.live_draw_service import run_scheduled_live_draw_if_due, schedule_live_draw_if_needed
 from app.models import Raffle, RaffleStatus, Ticket, Transaction, User
 from app.reservation_service import expire_stale_pending_reservations
 from app.schemas import (
     HallOfFameEntryOut,
     HallOfFameSpotlightRaffle,
+    PublicLiveDrawOut,
+    PublicWheelSegmentOut,
     RaffleDetailOut,
     RaffleListOut,
     RafflePublic,
@@ -23,6 +27,62 @@ from app.security import get_current_user_id
 router = APIRouter()
 
 _VALID_RAFFLE_STATUS = frozenset(s.value for s in RaffleStatus)
+
+
+async def _build_public_live_draw(session: AsyncSession, raffle: Raffle) -> PublicLiveDrawOut:
+    now = datetime.now(timezone.utc)
+    st: str = raffle.status
+    if st not in ("active", "sold_out", "finished", "canceled"):
+        st = "active"
+
+    seconds_until: int | None = None
+    sched = raffle.scheduled_live_draw_at
+    if (
+        st == RaffleStatus.sold_out.value
+        and sched is not None
+        and raffle.winning_ticket_number is None
+    ):
+        s_utc = sched if sched.tzinfo else sched.replace(tzinfo=timezone.utc)
+        seconds_until = int(max(0, (s_utc - now).total_seconds()))
+
+    segments: list[PublicWheelSegmentOut] = []
+    if st in (RaffleStatus.sold_out.value, RaffleStatus.finished.value):
+        tr = await session.execute(
+            select(Ticket.ticket_number, User.full_name)
+            .join(User, Ticket.user_id == User.id)
+            .where(Ticket.raffle_id == raffle.id, Ticket.status == "paid")
+            .order_by(Ticket.ticket_number.asc()),
+        )
+        segments = [
+            PublicWheelSegmentOut(ticket_number=int(row[0]), full_name=str(row[1])) for row in tr.all()
+        ]
+
+    winner_name: str | None = None
+    if raffle.winning_ticket_number is not None and st == RaffleStatus.finished.value:
+        wnr = await session.execute(
+            select(User.full_name)
+            .select_from(Ticket)
+            .join(User, Ticket.user_id == User.id)
+            .where(
+                Ticket.raffle_id == raffle.id,
+                Ticket.ticket_number == raffle.winning_ticket_number,
+                Ticket.status == "paid",
+            )
+            .limit(1),
+        )
+        winner_name = wnr.scalar_one_or_none()
+
+    return PublicLiveDrawOut(
+        raffle_id=raffle.id,
+        raffle_title=raffle.title,
+        status=st,
+        server_now=now,
+        scheduled_live_draw_at=raffle.scheduled_live_draw_at,
+        seconds_until_draw=seconds_until,
+        winner_ticket_number=raffle.winning_ticket_number,
+        winner_full_name=winner_name,
+        segments=segments,
+    )
 
 
 def _mask_display_name_for_pulse(full_name: str) -> str:
@@ -244,18 +304,39 @@ async def list_raffles(
     return out
 
 
+@router.get("/raffles/{raffle_id}/live-draw", response_model=PublicLiveDrawOut)
+async def get_raffle_live_draw(
+    raffle_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> PublicLiveDrawOut:
+    """
+    Estado do sorteio ao vivo: countdown, segmentos da roleta (bilhetes pagos + nomes).
+    Quando passa o horário agendado, executa o sorteio aleatório (idempotente) neste pedido.
+    """
+    await expire_stale_pending_reservations(session, raffle_id=raffle_id)
+    await run_scheduled_live_draw_if_due(session, raffle_id)
+
+    r_result = await session.execute(select(Raffle).where(Raffle.id == raffle_id))
+    raffle = r_result.scalar_one_or_none()
+    if raffle is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sorteio não encontrado")
+
+    return await _build_public_live_draw(session, raffle)
+
+
 @router.get("/raffles/{raffle_id}", response_model=RaffleDetailOut)
 async def get_raffle_detail(
     raffle_id: UUID,
     session: AsyncSession = Depends(get_session),
 ) -> RaffleDetailOut:
     """Retorna detalhes da rifa (público), incluindo lista de números vendidos."""
+    await expire_stale_pending_reservations(session, raffle_id=raffle_id)
+    await run_scheduled_live_draw_if_due(session, raffle_id)
+
     r_result = await session.execute(select(Raffle).where(Raffle.id == raffle_id))
     raffle = r_result.scalar_one_or_none()
     if raffle is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sorteio não encontrado")
-
-    await expire_stale_pending_reservations(session, raffle_id=raffle_id)
 
     sold_result = await session.execute(
         select(Ticket.ticket_number).where(
@@ -364,7 +445,10 @@ async def buy_ticket(
         ),
     )
     if sold is not None and sold >= raffle.total_tickets:
+        became_sold_out = raffle.status == RaffleStatus.active.value
         raffle.status = RaffleStatus.sold_out.value
+        if became_sold_out:
+            await schedule_live_draw_if_needed(session, raffle)
 
     await session.refresh(user)
     return TicketPurchaseResponse(

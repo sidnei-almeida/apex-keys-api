@@ -13,10 +13,13 @@ CREATE TABLE IF NOT EXISTS users (
     avatar_url VARCHAR(1024),
     balance NUMERIC(12, 2) NOT NULL DEFAULT 0,
     is_admin BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    deactivated_at TIMESTAMPTZ,
+    delete_after TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS ix_users_email ON users (email);
+CREATE INDEX IF NOT EXISTS ix_users_delete_after ON users (delete_after);
 
 CREATE TABLE IF NOT EXISTS raffles (
     id UUID PRIMARY KEY,
@@ -30,8 +33,18 @@ CREATE TABLE IF NOT EXISTS raffles (
     featured_tier VARCHAR(20) DEFAULT 'none',
     winning_ticket_number INTEGER,
     drawn_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    scheduled_live_draw_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    summary TEXT,
+    genres JSONB,
+    series JSONB,
+    game_modes JSONB,
+    player_perspectives JSONB,
+    igdb_url VARCHAR(1024),
+    igdb_game_id VARCHAR(64)
 );
+
+CREATE INDEX IF NOT EXISTS ix_raffles_scheduled_live_draw_at ON raffles (scheduled_live_draw_at);
 
 CREATE TABLE IF NOT EXISTS tickets (
     id UUID PRIMARY KEY,

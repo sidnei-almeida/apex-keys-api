@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_session
 from app.email_service import send_raffle_canceled_refund_email
+from app.live_draw_service import execute_random_draw_for_sold_out_raffle
 from app.models import FeaturedTier, Notification, Raffle, RaffleStatus, Ticket, Transaction, User
 from app.pricing import tactical_ticket_price
 from app.reservation_service import (
@@ -22,12 +23,15 @@ from app.reservation_service import (
     reservation_expires_at_utc,
 )
 from app.schemas import (
+    AdminDrawRandomOut,
     AdminRaffleCreate,
     AdminReservationRowOut,
     AdminReservationsListOut,
     AdminUserPatch,
     AdminWalletAdjust,
     AdminWalletAdjustResponse,
+    AdminWheelSegmentOut,
+    AdminWheelSegmentsOut,
     FeaturedTierPatch,
     RaffleCancelResponse,
     RaffleDeleteResponse,
@@ -330,6 +334,88 @@ async def patch_raffle_video(
     await session.flush()
     await session.refresh(raffle)
     return RafflePublic.model_validate(raffle)
+
+
+@router.get("/raffles/{raffle_id}/wheel-segments", response_model=AdminWheelSegmentsOut)
+async def admin_wheel_segments(
+    raffle_id: UUID,
+    _admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_session),
+) -> AdminWheelSegmentsOut:
+    """
+    Lista todos os bilhetes pagos da rifa com nome do comprador (para montar a roleta no site).
+    Rifas canceladas: 404.
+    """
+    r_result = await session.execute(select(Raffle).where(Raffle.id == raffle_id))
+    raffle = r_result.scalar_one_or_none()
+    if raffle is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sorteio não encontrado")
+    if raffle.status == RaffleStatus.canceled.value:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rifa cancelada — sem roleta")
+
+    tr = await session.execute(
+        select(Ticket, User)
+        .join(User, Ticket.user_id == User.id)
+        .where(Ticket.raffle_id == raffle_id, Ticket.status == "paid")
+        .order_by(Ticket.ticket_number.asc()),
+    )
+    segments = [
+        AdminWheelSegmentOut(
+            ticket_number=t.ticket_number,
+            user_id=u.id,
+            full_name=u.full_name,
+            avatar_url=u.avatar_url,
+        )
+        for t, u in tr.all()
+    ]
+    return AdminWheelSegmentsOut(
+        raffle_id=raffle.id,
+        raffle_title=raffle.title,
+        raffle_status=raffle.status,
+        winning_ticket_number=raffle.winning_ticket_number,
+        segments=segments,
+    )
+
+
+@router.post("/raffles/{raffle_id}/draw-random", response_model=AdminDrawRandomOut)
+async def admin_draw_random_winner(
+    raffle_id: UUID,
+    _admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_session),
+) -> AdminDrawRandomOut:
+    """
+    Escolhe aleatoriamente (``secrets``) um bilhete pago, regista como vencedor e passa a rifa a ``finished``.
+    Mesmas regras que ``POST .../draw`` manual: só ``sold_out`` e sem sorteio prévio.
+    """
+    r_result = await session.execute(
+        select(Raffle).where(Raffle.id == raffle_id).with_for_update(),
+    )
+    raffle = r_result.scalar_one_or_none()
+    if raffle is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sorteio não encontrado")
+    if raffle.status != RaffleStatus.sold_out.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Só é possível sortear rifas em estado sold_out",
+        )
+    if raffle.winning_ticket_number is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Esta rifa já tem bilhete vencedor registado",
+        )
+
+    try:
+        n, winner_uid, winner_name = await execute_random_draw_for_sold_out_raffle(session, raffle)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+
+    await session.refresh(raffle)
+    return AdminDrawRandomOut(
+        raffle=RafflePublic.model_validate(raffle),
+        winner_ticket_number=n,
+        winner_user_id=winner_uid,
+        winner_full_name=winner_name,
+    )
 
 
 @router.post("/raffles/{raffle_id}/draw", response_model=RafflePublic)

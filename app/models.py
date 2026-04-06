@@ -72,6 +72,11 @@ class Raffle(Base):
     )
     winning_ticket_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     drawn_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    scheduled_live_draw_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     genres: Mapped[list | None] = mapped_column(JSON, nullable=True)

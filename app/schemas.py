@@ -235,6 +235,7 @@ class RafflePublic(BaseModel):
     featured_tier: FeaturedTierType | None = None
     winning_ticket_number: int | None = None
     drawn_at: datetime | None = None
+    scheduled_live_draw_at: datetime | None = None
     created_at: datetime
     summary: str | None = None
     genres: list[str] = Field(default_factory=list)
@@ -310,6 +311,56 @@ class RaffleDrawRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     winning_ticket_number: int = Field(..., ge=1, description="Número do bilhete pago que ganhou o sorteio")
+
+
+class AdminWheelSegmentOut(BaseModel):
+    """Um bilhete pago na roleta (número + dono)."""
+
+    ticket_number: int
+    user_id: UUID
+    full_name: str
+    avatar_url: str | None = None
+
+
+class AdminWheelSegmentsOut(BaseModel):
+    raffle_id: UUID
+    raffle_title: str
+    raffle_status: str
+    winning_ticket_number: int | None = None
+    segments: list[AdminWheelSegmentOut]
+
+
+class AdminDrawRandomOut(BaseModel):
+    """Após sorteio aleatório no servidor: rifa finalizada + identidade do vencedor."""
+
+    raffle: RafflePublic
+    winner_ticket_number: int
+    winner_user_id: UUID
+    winner_full_name: str
+
+
+class PublicWheelSegmentOut(BaseModel):
+    """Segmento público da roleta (sem expor user_id)."""
+
+    ticket_number: int
+    full_name: str
+
+
+class PublicLiveDrawOut(BaseModel):
+    """Estado do sorteio ao vivo + segmentos para a roleta no site (público)."""
+
+    raffle_id: UUID
+    raffle_title: str
+    status: str
+    server_now: datetime
+    scheduled_live_draw_at: datetime | None = None
+    seconds_until_draw: int | None = Field(
+        None,
+        description="Segundos até o horário do sorteio automático; null se não aplicável.",
+    )
+    winner_ticket_number: int | None = None
+    winner_full_name: str | None = None
+    segments: list[PublicWheelSegmentOut] = Field(default_factory=list)
 
 
 class HallOfFameSpotlightRaffle(BaseModel):

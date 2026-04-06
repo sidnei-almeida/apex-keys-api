@@ -106,7 +106,12 @@ async def finalize_hold_as_paid(
         ),
     )
     if sold is not None and sold >= raffle.total_tickets:
+        became_sold_out = raffle.status == RaffleStatus.active.value
         raffle.status = RaffleStatus.sold_out.value
+        if became_sold_out:
+            from app.live_draw_service import schedule_live_draw_if_needed
+
+            await schedule_live_draw_if_needed(session, raffle)
 
     return tickets, raffle
 
