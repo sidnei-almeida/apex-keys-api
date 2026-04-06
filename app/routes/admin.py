@@ -25,6 +25,7 @@ from app.schemas import (
     AdminRaffleCreate,
     AdminReservationRowOut,
     AdminReservationsListOut,
+    AdminUserPatch,
     AdminWalletAdjust,
     AdminWalletAdjustResponse,
     FeaturedTierPatch,
@@ -35,6 +36,7 @@ from app.schemas import (
     RafflePublic,
     RaffleUpdate,
     RaffleVideoPatch,
+    UserPublic,
 )
 from app.security import get_current_admin
 
@@ -57,6 +59,45 @@ def _dailymotion_id_from_url(url: str | None) -> str | None:
     if re.fullmatch(r"x[a-zA-Z0-9]{5,32}", u):
         return u
     return None
+
+
+@router.get("/users", response_model=list[UserPublic])
+async def admin_list_users(
+    _admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_session),
+) -> list[UserPublic]:
+    """Lista todos os utilizadores ordenados por data de criação (mais recentes primeiro)."""
+    result = await session.execute(select(User).order_by(User.created_at.desc()))
+    return [UserPublic.model_validate(u) for u in result.scalars().all()]
+
+
+@router.patch("/users/{user_id}", response_model=UserPublic)
+async def admin_patch_user(
+    user_id: UUID,
+    body: AdminUserPatch,
+    _admin: User = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_session),
+) -> UserPublic:
+    """Atualiza campos de um utilizador (nome, email, whatsapp, pix_key, avatar_url, is_admin)."""
+    result = await session.execute(select(User).where(User.id == user_id).with_for_update())
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Utilizador não encontrado")
+    data = body.model_dump(exclude_unset=True)
+    if "email" in data and data["email"] is not None:
+        conflict = await session.execute(
+            select(User).where(User.email == str(data["email"]), User.id != user_id)
+        )
+        if conflict.scalar_one_or_none() is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="E-mail já em uso por outro utilizador")
+    for field, value in data.items():
+        if field == "email" and value is not None:
+            setattr(user, field, str(value))
+        else:
+            setattr(user, field, value)
+    await session.flush()
+    await session.refresh(user)
+    return UserPublic.model_validate(user)
 
 
 @router.post("/users/{user_id}/adjust-balance", response_model=AdminWalletAdjustResponse)

@@ -356,6 +356,19 @@ class AdminWalletAdjustResponse(BaseModel):
     amount_adjusted: Decimal
 
 
+class AdminUserPatch(BaseModel):
+    """Atualização parcial de um utilizador pelo admin."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    full_name: str | None = Field(None, min_length=1, max_length=255)
+    email: EmailStr | None = None
+    whatsapp: str | None = Field(None, min_length=10, max_length=20, pattern=r"^\+?[0-9]{10,20}$")
+    pix_key: str | None = Field(None, max_length=140)
+    avatar_url: str | None = Field(None, max_length=1024)
+    is_admin: bool | None = None
+
+
 class AdminRaffleCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
