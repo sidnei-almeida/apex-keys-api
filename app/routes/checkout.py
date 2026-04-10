@@ -58,9 +58,10 @@ async def _build_public_live_draw(session: AsyncSession, raffle: Raffle) -> Publ
         ]
 
     winner_name: str | None = None
+    winner_avatar: str | None = None
     if raffle.winning_ticket_number is not None and st == RaffleStatus.finished.value:
         wnr = await session.execute(
-            select(User.full_name)
+            select(User.full_name, User.avatar_url)
             .select_from(Ticket)
             .join(User, Ticket.user_id == User.id)
             .where(
@@ -70,7 +71,9 @@ async def _build_public_live_draw(session: AsyncSession, raffle: Raffle) -> Publ
             )
             .limit(1),
         )
-        winner_name = wnr.scalar_one_or_none()
+        row = wnr.first()
+        if row is not None:
+            winner_name, winner_avatar = row[0], row[1]
 
     return PublicLiveDrawOut(
         raffle_id=raffle.id,
@@ -81,6 +84,7 @@ async def _build_public_live_draw(session: AsyncSession, raffle: Raffle) -> Publ
         seconds_until_draw=seconds_until,
         winner_ticket_number=raffle.winning_ticket_number,
         winner_full_name=winner_name,
+        winner_avatar_url=winner_avatar,
         segments=segments,
     )
 

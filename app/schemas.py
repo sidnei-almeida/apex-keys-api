@@ -366,6 +366,7 @@ class PublicLiveDrawOut(BaseModel):
     )
     winner_ticket_number: int | None = None
     winner_full_name: str | None = None
+    winner_avatar_url: str | None = None
     segments: list[PublicWheelSegmentOut] = Field(default_factory=list)
 
 
