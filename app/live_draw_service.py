@@ -1,5 +1,5 @@
 """
-Sorteio ao vivo: ao esgotar 100% dos bilhetes **pagos**, agenda +10 min e notifica compradores.
+Sorteio ao vivo: ao esgotar 100% dos bilhetes **pagos**, agenda +5 min e notifica compradores.
 Após o horário, o primeiro pedido público idempotente executa o sorteio aleatório (secrets).
 """
 from __future__ import annotations
@@ -11,9 +11,10 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.brasil_time import format_brasilia_hm
 from app.models import Notification, Raffle, RaffleStatus, Ticket, User
 
-LIVE_DRAW_DELAY = timedelta(minutes=10)
+LIVE_DRAW_DELAY = timedelta(minutes=5)
 
 
 async def schedule_live_draw_if_needed(session: AsyncSession, raffle: Raffle) -> None:
@@ -42,11 +43,11 @@ async def _notify_buyers_live_draw_scheduled(
         .distinct(),
     )
     user_ids = [row[0] for row in uids_r.all()]
-    # Horário local aproximado no texto: manter ISO em UTC no título; corpo em PT
-    local_hint = at_utc.astimezone().strftime("%H:%M")
+    # Horário de Brasília (não usar astimezone() sem TZ: no servidor EUA ficava errado)
+    br_hm = format_brasilia_hm(at_utc)
     title = f"Sorteio ao vivo: {raffle_title}"
     body = (
-        f"Todos os números foram vendidos! Em 10 minutos ({local_hint} horário local) "
+        f"Todos os números foram vendidos! Em 5 minutos ({br_hm}, horário de Brasília) "
         f"corre o sorteio na roleta ao vivo. Entra em /raffle/{raffle_id}/sorteio para acompanhar."
     )
     for uid in user_ids:
