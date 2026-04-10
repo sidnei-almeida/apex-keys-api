@@ -9,7 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.deps import get_session
 from app.models import User
 from app.ranking_me_service import compute_ranking_me
-from app.schemas import RankingMeOut
+from app.ranking_top_service import compute_ranking_top
+from app.schemas import RankingMeOut, RankingPodiumEntryOut
 from app.security import get_optional_user_id
 
 router = APIRouter()
@@ -53,3 +54,17 @@ async def ranking_me(
 
     data = await compute_ranking_me(session, user_id, category)
     return RankingMeOut(**data)
+
+
+@router.get("/top", response_model=list[RankingPodiumEntryOut])
+async def ranking_top(
+    category: CategoryQuery = Query(
+        ...,
+        description="victories | buyers | active | hot",
+    ),
+    limit: int = Query(5, ge=1, le=20),
+    session: AsyncSession = Depends(get_session),
+) -> list[RankingPodiumEntryOut]:
+    """Top utilizadores por categoria para o pódio do Hall da Fama (dados reais)."""
+    rows = await compute_ranking_top(session, category, limit)
+    return [RankingPodiumEntryOut(**r) for r in rows]

@@ -389,6 +389,17 @@ class HallOfFameEntryOut(BaseModel):
     spotlight: HallOfFameSpotlightRaffle
 
 
+class RankingPodiumEntryOut(BaseModel):
+    """GET /rankings/top — uma posição no pódio por categoria (métrica em stat_line)."""
+
+    rank: int = Field(..., ge=1)
+    user_id: UUID
+    full_name: str
+    avatar_url: str | None = None
+    stat_line: str
+    spotlight: HallOfFameSpotlightRaffle | None = None
+
+
 class RankingMeOut(BaseModel):
     """GET /rankings/me — posição do utilizador na categoria (autenticado ou convidado)."""
 
