@@ -389,6 +389,20 @@ class HallOfFameEntryOut(BaseModel):
     spotlight: HallOfFameSpotlightRaffle
 
 
+class RankingMeOut(BaseModel):
+    """GET /rankings/me — posição do utilizador na categoria (autenticado ou convidado)."""
+
+    authenticated: bool
+    category: str
+    rank: int | None = None
+    metric_label: str | None = None
+    metric_value: float | None = None
+    metric_display: str | None = None
+    next_target_label: str
+    progress_percent: int = Field(..., ge=0, le=100)
+    in_ranking: bool
+
+
 class RecentPurchasePulseOut(BaseModel):
     """Compra agregada para prova social (nome parcial, sem e-mail)."""
 

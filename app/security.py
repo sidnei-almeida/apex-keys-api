@@ -38,6 +38,22 @@ def decode_token(token: str) -> dict[str, Any]:
     return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
 
 
+async def get_optional_user_id(
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> UUID | None:
+    """JWT opcional — None se ausente ou inválido (sem 401)."""
+    if creds is None or creds.scheme.lower() != "bearer":
+        return None
+    try:
+        payload = decode_token(creds.credentials)
+        sub = payload.get("sub")
+        if not sub:
+            return None
+        return UUID(str(sub))
+    except (JWTError, ValueError):
+        return None
+
+
 async def get_current_user_id(
     creds: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> UUID:
