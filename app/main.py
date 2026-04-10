@@ -1,6 +1,5 @@
 import logging
 from contextlib import asynccontextmanager
-
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, status
@@ -15,6 +14,32 @@ from app.routes import admin, auth, checkout, igdb, rankings, raffle_reservation
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("apex_keys")
+
+
+def _json_safe_validation_errors(errors: list) -> list:
+    """Pydantic v2 pode colocar exceções em `ctx`; json.dumps não as serializa."""
+    out: list[dict] = []
+    for item in errors:
+        if not isinstance(item, dict):
+            out.append({"msg": str(item)})
+            continue
+        d = dict(item)
+        ctx = d.get("ctx")
+        if isinstance(ctx, dict):
+            safe_ctx: dict = {}
+            for k, val in ctx.items():
+                if isinstance(val, BaseException):
+                    safe_ctx[k] = str(val)
+                elif isinstance(val, (str, int, float, bool, type(None))):
+                    safe_ctx[k] = val
+                else:
+                    safe_ctx[k] = str(val)
+            d["ctx"] = safe_ctx
+        inp = d.get("input")
+        if isinstance(inp, BaseException):
+            d["input"] = str(inp)
+        out.append(d)
+    return out
 
 
 @asynccontextmanager
@@ -67,7 +92,10 @@ async def validation_exception_handler(
 ) -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={"detail": "Dados de entrada inválidos", "errors": exc.errors()},
+        content={
+            "detail": "Dados de entrada inválidos",
+            "errors": _json_safe_validation_errors(exc.errors()),
+        },
     )
 
 

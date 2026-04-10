@@ -8,6 +8,37 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from pydantic import HttpUrl
 
 
+def _normalize_whatsapp_digits(v: str) -> str:
+    """Remove espaços e pontuação; mantém opcional + no início (E.164 compacto)."""
+    s = v.strip()
+    if s.startswith("+"):
+        return "+" + re.sub(r"\D", "", s[1:])
+    return re.sub(r"\D", "", s)
+
+
+def _maybe_compact_pix_phone(v: str) -> str:
+    """
+    Compacta chave PIX quando é telefone com espaços/parenteses (ex.: +55 54 99999-9999).
+    Não altera e-mail, UUID nem CPF/CNPJ só com separadores (11/14 dígitos sem +).
+    """
+    s = v.strip()
+    if "@" in s:
+        return s
+    if re.fullmatch(
+        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+        s,
+    ):
+        return s
+    d = re.sub(r"\D", "", s)
+    # CPF/CNPJ puro com pontuação — só dígitos, sem + e tamanho típico
+    if not s.strip().startswith("+") and len(d) in (11, 14):
+        return d
+    if s.strip().startswith("+") or " " in s or "(" in s:
+        if 10 <= len(d) <= 15:
+            return "+" + d
+    return s
+
+
 def _validate_pix_key(v: str | None) -> str | None:
     """Valida chave PIX BR: CPF (11 dígitos), e-mail, telefone E.164 ou UUID (aleatória)."""
     if v is None or (isinstance(v, str) and not v.strip()):
@@ -15,6 +46,7 @@ def _validate_pix_key(v: str | None) -> str | None:
     v = v.strip()
     if not v:
         return None
+    v = _maybe_compact_pix_phone(v)
     if len(v) > 140:
         raise ValueError("Chave PIX deve ter no máximo 140 caracteres")
     # CPF: 11 dígitos
@@ -48,6 +80,13 @@ class UserSignup(BaseModel):
     password: str = Field(..., min_length=8, max_length=128)
     whatsapp: str = Field(..., min_length=10, max_length=20, pattern=r"^\+?[0-9]{10,20}$")
     pix_key: str | None = Field(None, min_length=1, max_length=140)
+
+    @field_validator("whatsapp", mode="before")
+    @classmethod
+    def normalize_whatsapp(cls, v: object) -> object:
+        if isinstance(v, str):
+            return _normalize_whatsapp_digits(v)
+        return v
 
     @field_validator("pix_key")
     @classmethod
@@ -91,6 +130,13 @@ class UserProfileUpdate(BaseModel):
     full_name: str | None = Field(None, min_length=1, max_length=255)
     whatsapp: str | None = Field(None, min_length=10, max_length=20, pattern=r"^\+?[0-9]{10,20}$")
     pix_key: str | None = Field(None, max_length=140)
+
+    @field_validator("whatsapp", mode="before")
+    @classmethod
+    def normalize_whatsapp_profile(cls, v: object) -> object:
+        if isinstance(v, str):
+            return _normalize_whatsapp_digits(v)
+        return v
 
     @field_validator("pix_key")
     @classmethod
@@ -450,6 +496,20 @@ class AdminUserPatch(BaseModel):
     pix_key: str | None = Field(None, max_length=140)
     avatar_url: str | None = Field(None, max_length=1024)
     is_admin: bool | None = None
+
+    @field_validator("whatsapp", mode="before")
+    @classmethod
+    def normalize_whatsapp_admin(cls, v: object) -> object:
+        if isinstance(v, str):
+            return _normalize_whatsapp_digits(v)
+        return v
+
+    @field_validator("pix_key")
+    @classmethod
+    def validate_pix_admin(cls, v: str | None) -> str | None:
+        if v is not None and str(v).strip():
+            return _validate_pix_key(str(v))
+        return None
 
 
 class AdminRaffleCreate(BaseModel):
