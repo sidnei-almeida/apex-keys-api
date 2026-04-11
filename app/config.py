@@ -50,6 +50,15 @@ class Settings(BaseSettings):
         ),
         description="Access token da API Mercado Pago (teste ou produção). Opcional: sem token usa mock Pix.",
     )
+    live_draw_delay_minutes: int = Field(
+        default=30,
+        ge=1,
+        le=10080,
+        description=(
+            "Minutos após esgotar a rifa (100% pagos) até o sorteio automático na roleta. "
+            "Padrão 30 para desenvolvimento; em produção definir LIVE_DRAW_DELAY_MINUTES=5."
+        ),
+    )
 
     def cors_origin_list(self) -> list[str]:
         """

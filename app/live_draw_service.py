@@ -1,6 +1,7 @@
 """
-Sorteio ao vivo: ao esgotar 100% dos bilhetes **pagos**, agenda +5 min e notifica compradores.
-Após o horário, o primeiro pedido público idempotente executa o sorteio aleatório (secrets).
+Sorteio ao vivo: ao esgotar 100% dos bilhetes **pagos**, agenda uma janela (minutos via Settings)
+e notifica compradores. Após o horário, o primeiro pedido público idempotente executa o sorteio
+aleatório (secrets).
 """
 from __future__ import annotations
 
@@ -12,9 +13,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.brasil_time import format_brasilia_hm
+from app.config import get_settings
 from app.models import Notification, Raffle, RaffleStatus, Ticket, User
-
-LIVE_DRAW_DELAY = timedelta(minutes=5)
 
 
 async def schedule_live_draw_if_needed(session: AsyncSession, raffle: Raffle) -> None:
@@ -27,7 +27,8 @@ async def schedule_live_draw_if_needed(session: AsyncSession, raffle: Raffle) ->
     if raffle.scheduled_live_draw_at is not None:
         return
     now = datetime.now(timezone.utc)
-    raffle.scheduled_live_draw_at = now + LIVE_DRAW_DELAY
+    delay = timedelta(minutes=get_settings().live_draw_delay_minutes)
+    raffle.scheduled_live_draw_at = now + delay
     await _notify_buyers_live_draw_scheduled(session, raffle.id, raffle.title, raffle.scheduled_live_draw_at)
 
 

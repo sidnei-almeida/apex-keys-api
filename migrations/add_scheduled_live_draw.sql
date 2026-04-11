@@ -1,4 +1,4 @@
--- Sorteio ao vivo: quando a rifa esgota (100% pagos), agenda draw automático (+5 min — ver LIVE_DRAW_DELAY na app).
+-- Sorteio ao vivo: quando a rifa esgota (100% pagos), agenda draw automático (atraso em minutos — ver live_draw_delay_minutes / LIVE_DRAW_DELAY_MINUTES na app).
 ALTER TABLE raffles
   ADD COLUMN IF NOT EXISTS scheduled_live_draw_at TIMESTAMPTZ NULL;
 
